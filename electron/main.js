@@ -180,7 +180,7 @@ function createWindow() {
     frame: false,
     titleBarStyle: "hidden",
     backgroundColor: "#1f1f1f",
-    icon: path.join(__dirname, "app-icon.png"),
+    icon: path.join(__dirname, "icon.png"),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

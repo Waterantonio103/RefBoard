@@ -31,7 +31,7 @@
       "server.js"
     ],
     "win": {
-      "icon": "electron/app-icon.ico",
+      "icon": "electron/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         "nsis"
@@ -45,7 +45,7 @@
       "createStartMenuShortcut": true
     },
     "linux": {
-      "icon": "electron/app-icon.png",
+      "icon": "electron/icon.png",
       "target": [
         "AppImage"
       ],

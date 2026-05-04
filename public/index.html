@@ -12,6 +12,25 @@
       <div class="app-titlebar-drag">
         <img class="app-titlebar-icon" src="icon.png" alt="" width="22" height="22">
         <span class="app-titlebar-title">Reference Board</span>
+        <div class="app-menu">
+          <button id="fileMenuBtn" class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
+          <div id="fileMenu" class="app-menu-dropdown" role="menu" hidden>
+            <button type="button" role="menuitem" data-file-action="add-images">Add Images...</button>
+            <button type="button" role="menuitem" data-file-action="new-frame">New Frame</button>
+            <div class="app-menu-separator" role="separator"></div>
+            <button type="button" role="menuitem" data-file-action="save-board">Save Board</button>
+            <button type="button" role="menuitem" data-file-action="open-board">Open Board...</button>
+            <button type="button" role="menuitem" data-file-action="import-board">Import Board...</button>
+            <div class="app-menu-separator" role="separator"></div>
+            <button type="button" role="menuitem" data-file-action="export-board">Export .refboard...</button>
+            <button type="button" role="menuitem" data-file-action="export-png">Export PNG...</button>
+            <div class="app-menu-separator" role="separator"></div>
+            <label class="app-menu-check" role="menuitemcheckbox">
+              <input id="fileAutoSaveInput" type="checkbox">
+              <span>Auto Save</span>
+            </label>
+          </div>
+        </div>
       </div>
       <div class="window-controls" aria-label="Window controls">
         <button id="windowMinimizeBtn" class="window-control" type="button" title="Minimize" aria-label="Minimize">
@@ -83,10 +102,6 @@
           <path d="M12 15V3"></path>
         </svg>
       </button>
-      <label class="autosave-toggle" title="Auto Save">
-        <input id="autoSaveInput" type="checkbox">
-        <span>Auto</span>
-      </label>
       <button id="themeBtn" class="icon-button" type="button" title="Switch theme" aria-label="Switch theme">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3z"></path>

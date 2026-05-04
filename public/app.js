@@ -12,7 +12,9 @@ const boardRenameEditor = document.getElementById("boardRenameEditor");
 const boardRenameInput = document.getElementById("boardRenameInput");
 const openDialog = document.getElementById("openDialog");
 const boardList = document.getElementById("boardList");
-const autoSaveInput = document.getElementById("autoSaveInput");
+const fileMenuBtn = document.getElementById("fileMenuBtn");
+const fileMenu = document.getElementById("fileMenu");
+const fileAutoSaveInput = document.getElementById("fileAutoSaveInput");
 const windowMinimizeBtn = document.getElementById("windowMinimizeBtn");
 const windowMaximizeBtn = document.getElementById("windowMaximizeBtn");
 const windowCloseBtn = document.getElementById("windowCloseBtn");
@@ -1192,7 +1194,20 @@ function hideContextMenu() {
   contextMenu.hidden = true;
 }
 
+function hideFileMenu() {
+  fileMenu.hidden = true;
+  fileMenuBtn.setAttribute("aria-expanded", "false");
+}
+
+function toggleFileMenu() {
+  const willOpen = fileMenu.hidden;
+  hideContextMenu();
+  fileMenu.hidden = !willOpen;
+  fileMenuBtn.setAttribute("aria-expanded", String(willOpen));
+}
+
 function showContextMenu(clientX, clientY, position) {
+  hideFileMenu();
   contextWorldPosition = position;
   const hasSelection = Boolean(selected);
   contextMenu.querySelector('[data-action="rename"]').disabled = !hasSelection;
@@ -1220,6 +1235,9 @@ function runDesktopMenuAction(action) {
   if (action === "import-board") boardInput.click();
   if (action === "export-board") exportRefboard();
   if (action === "export-png") savePng();
+  if (action === "toggle-auto-save") {
+    setAutoSaveEnabled(!autoSaveEnabled);
+  }
   if (action === "delete-selected") deleteSelection();
   if (action === "rename-selected") {
     if (selected?.type === "frame") {
@@ -1231,6 +1249,14 @@ function runDesktopMenuAction(action) {
       if (image) showRenameEditor("image", image.id, worldToScreen(image.x + image.width / 2, image.y + image.height / 2));
     }
   }
+}
+
+async function setAutoSaveEnabled(enabled) {
+  autoSaveEnabled = Boolean(enabled);
+  fileAutoSaveInput.checked = autoSaveEnabled;
+  await storage.setPref("autoSave", autoSaveEnabled);
+  setStatus(autoSaveEnabled ? "Auto Save on" : "Auto Save off");
+  if (autoSaveEnabled && currentBoard.dirty) scheduleAutoSave();
 }
 
 stage.on("mousedown", (event) => {
@@ -1352,6 +1378,7 @@ window.addEventListener("paste", async (event) => {
 window.addEventListener("keydown", (event) => {
   if (!renameEditor.hidden) return;
   hideContextMenu();
+  if (event.key === "Escape") hideFileMenu();
   if (event.key === "Delete" || event.key === "Backspace") {
     if (selected) event.preventDefault();
     deleteSelection();
@@ -1366,18 +1393,25 @@ document.getElementById("importBtn").addEventListener("click", () => boardInput.
 document.getElementById("exportBoardBtn").addEventListener("click", exportRefboard);
 document.getElementById("savePngBtn").addEventListener("click", savePng);
 window.referenceBoard?.onMenuAction?.(runDesktopMenuAction);
+fileMenuBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleFileMenu();
+});
+fileMenu.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const button = event.target.closest("button[data-file-action]");
+  if (!button) return;
+  hideFileMenu();
+  runDesktopMenuAction(button.dataset.fileAction);
+});
+fileAutoSaveInput.addEventListener("change", () => {
+  setAutoSaveEnabled(fileAutoSaveInput.checked);
+});
 windowMinimizeBtn?.addEventListener("click", () => window.referenceBoard?.windowControl?.("minimize"));
 windowMaximizeBtn?.addEventListener("click", () => window.referenceBoard?.windowControl?.("maximize"));
 windowCloseBtn?.addEventListener("click", () => window.referenceBoard?.windowControl?.("close"));
 themeBtn.addEventListener("click", () => {
   setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
-});
-
-autoSaveInput.addEventListener("change", async () => {
-  autoSaveEnabled = autoSaveInput.checked;
-  await storage.setPref("autoSave", autoSaveEnabled);
-  setStatus(autoSaveEnabled ? "Auto Save on" : "Auto Save off");
-  if (autoSaveEnabled && currentBoard.dirty) scheduleAutoSave();
 });
 
 boardTitleBtn.addEventListener("dblclick", showBoardRenameEditor);
@@ -1450,6 +1484,7 @@ document.addEventListener("click", (event) => {
     hideBoardRenameEditor({ commit: true });
   }
   if (!contextMenu.hidden && !contextMenu.contains(event.target)) hideContextMenu();
+  if (!fileMenu.hidden && !fileMenu.contains(event.target) && event.target !== fileMenuBtn) hideFileMenu();
 });
 
 renameEditor.addEventListener("click", (event) => {
@@ -1517,7 +1552,7 @@ async function createBlankBoard() {
 
 async function restoreStartupBoard() {
   autoSaveEnabled = await storage.getPref("autoSave", true);
-  autoSaveInput.checked = autoSaveEnabled;
+  fileAutoSaveInput.checked = autoSaveEnabled;
 
   const lastBoardId = await storage.getPref("lastBoardId", null);
   const boards = await storage.listBoards();

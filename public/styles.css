@@ -76,10 +76,10 @@ body {
 }
 
 .app-titlebar-icon {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
-  border-radius: 5px;
+  border-radius: 6px;
 }
 
 .app-titlebar-title {

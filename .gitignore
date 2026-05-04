@@ -1,0 +1,19 @@
+node_modules/
+
+# Runtime output
+assets/*
+data/*.json
+*.log
+
+# Keep runtime directories present in fresh clones
+!assets/.gitkeep
+!data/.gitkeep
+
+# Environment files
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/

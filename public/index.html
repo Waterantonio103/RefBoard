@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Reference Board</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body tabindex="-1">
+    <aside class="sidebar" aria-label="Reference Board tools">
+      <button id="addImageBtn" class="icon-button" type="button" title="Add images from disk" aria-label="Add images from disk">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 5h16v14H4z"></path>
+          <path d="m4 16 5-5 4 4 2-2 5 5"></path>
+          <path d="M15.5 8.5h.01"></path>
+        </svg>
+      </button>
+      <button id="addFrameBtn" class="icon-button" type="button" title="Create frame" aria-label="Create frame">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 5h14v14H5z"></path>
+          <path d="M12 8v8"></path>
+          <path d="M8 12h8"></path>
+        </svg>
+      </button>
+      <button id="saveBtn" class="icon-button" type="button" title="Save JSON" aria-label="Save JSON">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+          <path d="M17 21v-8H7v8"></path>
+          <path d="M7 3v5h8"></path>
+        </svg>
+      </button>
+      <button id="savePngBtn" class="icon-button" type="button" title="Save PNG" aria-label="Save PNG">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <path d="M7 10l5 5 5-5"></path>
+          <path d="M12 15V3"></path>
+        </svg>
+      </button>
+      <button id="loadBtn" class="icon-button" type="button" title="Load JSON file" aria-label="Load JSON file">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+          <path d="M12 18v-6"></path>
+          <path d="m9 15 3 3 3-3"></path>
+        </svg>
+      </button>
+      <button id="loadServerBtn" class="icon-button" type="button" title="Load last server save" aria-label="Load last server save">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <path d="m7 10 5-5 5 5"></path>
+          <path d="M12 5v12"></path>
+        </svg>
+      </button>
+      <button id="themeBtn" class="icon-button" type="button" title="Switch theme" aria-label="Switch theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3z"></path>
+        </svg>
+      </button>
+      <input id="imageInput" type="file" accept="image/*" multiple hidden>
+      <input id="boardInput" type="file" accept="application/json,.json" hidden>
+    </aside>
+    <span id="status" role="status"></span>
+    <div id="contextMenu" class="context-menu" role="menu" hidden>
+      <button type="button" role="menuitem" data-action="add-image">Add image</button>
+      <button type="button" role="menuitem" data-action="paste-image">Paste image</button>
+      <button type="button" role="menuitem" data-action="add-frame">Add frame</button>
+      <button type="button" role="menuitem" data-action="rename">Rename selected</button>
+      <button type="button" role="menuitem" data-action="delete">Delete selected</button>
+      <button type="button" role="menuitem" data-action="save">Save board</button>
+      <button type="button" role="menuitem" data-action="save-png">Save PNG</button>
+    </div>
+    <form id="renameEditor" class="rename-editor" hidden>
+      <input id="renameInput" type="text" autocomplete="off" spellcheck="false" aria-label="Rename selected item">
+    </form>
+    <main id="canvasWrap">
+      <div id="stage"></div>
+    </main>
+    <script src="/vendor/konva.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

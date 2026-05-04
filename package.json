@@ -1,0 +1,20 @@
+{
+  "name": "reference-board",
+  "version": "1.0.0",
+  "description": "A lightweight local image reference board for Blender and art workflows.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "reference",
+    "canvas",
+    "blender",
+    "art"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "konva": "^9.3.14"
+  }
+}

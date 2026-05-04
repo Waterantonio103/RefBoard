@@ -211,6 +211,40 @@ function createWindow() {
   win.loadURL(`${APP_ORIGIN}/index.html`);
 }
 
+function runNativeAction(event, action) {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  const contents = win.webContents;
+
+  const editActions = {
+    undo: () => contents.undo(),
+    redo: () => contents.redo(),
+    cut: () => contents.cut(),
+    copy: () => contents.copy(),
+    paste: () => contents.paste(),
+    "select-all": () => contents.selectAll()
+  };
+
+  if (editActions[action]) {
+    editActions[action]();
+    return;
+  }
+
+  if (action === "reset-zoom") contents.setZoomFactor(1);
+  if (action === "zoom-in") contents.setZoomFactor(Math.min(3, contents.getZoomFactor() + 0.1));
+  if (action === "zoom-out") contents.setZoomFactor(Math.max(0.25, contents.getZoomFactor() - 0.1));
+  if (action === "toggle-fullscreen") win.setFullScreen(!win.isFullScreen());
+  if (action === "minimize") win.minimize();
+  if (action === "maximize") {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+  }
+  if (action === "close") win.close();
+}
+
 app.whenReady().then(() => {
   buildApplicationMenu();
 
@@ -236,6 +270,7 @@ app.whenReady().then(() => {
     }
     if (action === "close") win.close();
   });
+  ipcMain.on("reference-board:native-action", runNativeAction);
   createWindow();
 
   app.on("activate", () => {

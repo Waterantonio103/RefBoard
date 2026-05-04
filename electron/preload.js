@@ -16,5 +16,24 @@ contextBridge.exposeInMainWorld("referenceBoard", {
   windowControl: (action) => {
     if (!["minimize", "maximize", "close"].includes(action)) return;
     ipcRenderer.send("reference-board:window-control", action);
+  },
+  nativeAction: (action) => {
+    const allowedActions = [
+      "undo",
+      "redo",
+      "cut",
+      "copy",
+      "paste",
+      "select-all",
+      "reset-zoom",
+      "zoom-in",
+      "zoom-out",
+      "toggle-fullscreen",
+      "minimize",
+      "maximize",
+      "close"
+    ];
+    if (!allowedActions.includes(action)) return;
+    ipcRenderer.send("reference-board:native-action", action);
   }
 });

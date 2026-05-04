@@ -12,8 +12,7 @@ const boardRenameEditor = document.getElementById("boardRenameEditor");
 const boardRenameInput = document.getElementById("boardRenameInput");
 const openDialog = document.getElementById("openDialog");
 const boardList = document.getElementById("boardList");
-const fileMenuBtn = document.getElementById("fileMenuBtn");
-const fileMenu = document.getElementById("fileMenu");
+const appMenus = Array.from(document.querySelectorAll(".app-menu"));
 const fileAutoSaveInput = document.getElementById("fileAutoSaveInput");
 const windowMinimizeBtn = document.getElementById("windowMinimizeBtn");
 const windowMaximizeBtn = document.getElementById("windowMaximizeBtn");
@@ -1195,15 +1194,20 @@ function hideContextMenu() {
 }
 
 function hideFileMenu() {
-  fileMenu.hidden = true;
-  fileMenuBtn.setAttribute("aria-expanded", "false");
+  appMenus.forEach((menu) => {
+    menu.querySelector(".app-menu-dropdown").hidden = true;
+    menu.querySelector(".app-menu-button").setAttribute("aria-expanded", "false");
+  });
 }
 
-function toggleFileMenu() {
-  const willOpen = fileMenu.hidden;
+function toggleTopMenu(menu) {
+  const dropdown = menu.querySelector(".app-menu-dropdown");
+  const button = menu.querySelector(".app-menu-button");
+  const willOpen = dropdown.hidden;
   hideContextMenu();
-  fileMenu.hidden = !willOpen;
-  fileMenuBtn.setAttribute("aria-expanded", String(willOpen));
+  hideFileMenu();
+  dropdown.hidden = !willOpen;
+  button.setAttribute("aria-expanded", String(willOpen));
 }
 
 function showContextMenu(clientX, clientY, position) {
@@ -1393,16 +1397,26 @@ document.getElementById("importBtn").addEventListener("click", () => boardInput.
 document.getElementById("exportBoardBtn").addEventListener("click", exportRefboard);
 document.getElementById("savePngBtn").addEventListener("click", savePng);
 window.referenceBoard?.onMenuAction?.(runDesktopMenuAction);
-fileMenuBtn.addEventListener("click", (event) => {
-  event.stopPropagation();
-  toggleFileMenu();
-});
-fileMenu.addEventListener("click", (event) => {
-  event.stopPropagation();
-  const button = event.target.closest("button[data-file-action]");
-  if (!button) return;
-  hideFileMenu();
-  runDesktopMenuAction(button.dataset.fileAction);
+appMenus.forEach((menu) => {
+  const menuButton = menu.querySelector(".app-menu-button");
+  const dropdown = menu.querySelector(".app-menu-dropdown");
+  menuButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleTopMenu(menu);
+  });
+  dropdown.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const menuAction = event.target.closest("button[data-menu-action]");
+    const nativeAction = event.target.closest("button[data-native-action]");
+    if (menuAction) {
+      hideFileMenu();
+      runDesktopMenuAction(menuAction.dataset.menuAction);
+    }
+    if (nativeAction) {
+      hideFileMenu();
+      window.referenceBoard?.nativeAction?.(nativeAction.dataset.nativeAction);
+    }
+  });
 });
 fileAutoSaveInput.addEventListener("change", () => {
   setAutoSaveEnabled(fileAutoSaveInput.checked);
@@ -1484,7 +1498,7 @@ document.addEventListener("click", (event) => {
     hideBoardRenameEditor({ commit: true });
   }
   if (!contextMenu.hidden && !contextMenu.contains(event.target)) hideContextMenu();
-  if (!fileMenu.hidden && !fileMenu.contains(event.target) && event.target !== fileMenuBtn) hideFileMenu();
+  if (!event.target.closest(".app-menu")) hideFileMenu();
 });
 
 renameEditor.addEventListener("click", (event) => {

@@ -12,23 +12,58 @@
       <div class="app-titlebar-drag">
         <img class="app-titlebar-icon" src="icon.png" alt="" width="22" height="22">
         <span class="app-titlebar-title">Reference Board</span>
-        <div class="app-menu">
-          <button id="fileMenuBtn" class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
-          <div id="fileMenu" class="app-menu-dropdown" role="menu" hidden>
-            <button type="button" role="menuitem" data-file-action="add-images">Add Images...</button>
-            <button type="button" role="menuitem" data-file-action="new-frame">New Frame</button>
-            <div class="app-menu-separator" role="separator"></div>
-            <button type="button" role="menuitem" data-file-action="save-board">Save Board</button>
-            <button type="button" role="menuitem" data-file-action="open-board">Open Board...</button>
-            <button type="button" role="menuitem" data-file-action="import-board">Import Board...</button>
-            <div class="app-menu-separator" role="separator"></div>
-            <button type="button" role="menuitem" data-file-action="export-board">Export .refboard...</button>
-            <button type="button" role="menuitem" data-file-action="export-png">Export PNG...</button>
-            <div class="app-menu-separator" role="separator"></div>
-            <label class="app-menu-check" role="menuitemcheckbox">
-              <input id="fileAutoSaveInput" type="checkbox">
-              <span>Auto Save</span>
-            </label>
+        <div class="app-menus">
+          <div class="app-menu">
+            <button class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
+            <div class="app-menu-dropdown" role="menu" hidden>
+              <button type="button" role="menuitem" data-menu-action="add-images">Add Images...</button>
+              <button type="button" role="menuitem" data-menu-action="new-frame">New Frame</button>
+              <div class="app-menu-separator" role="separator"></div>
+              <button type="button" role="menuitem" data-menu-action="save-board">Save Board</button>
+              <button type="button" role="menuitem" data-menu-action="open-board">Open Board...</button>
+              <button type="button" role="menuitem" data-menu-action="import-board">Import Board...</button>
+              <div class="app-menu-separator" role="separator"></div>
+              <button type="button" role="menuitem" data-menu-action="export-board">Export .refboard...</button>
+              <button type="button" role="menuitem" data-menu-action="export-png">Export PNG...</button>
+              <div class="app-menu-separator" role="separator"></div>
+              <label class="app-menu-check" role="menuitemcheckbox">
+                <input id="fileAutoSaveInput" type="checkbox">
+                <span>Auto Save</span>
+              </label>
+            </div>
+          </div>
+          <div class="app-menu">
+            <button class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">Edit</button>
+            <div class="app-menu-dropdown" role="menu" hidden>
+              <button type="button" role="menuitem" data-native-action="undo">Undo</button>
+              <button type="button" role="menuitem" data-native-action="redo">Redo</button>
+              <div class="app-menu-separator" role="separator"></div>
+              <button type="button" role="menuitem" data-native-action="cut">Cut</button>
+              <button type="button" role="menuitem" data-native-action="copy">Copy</button>
+              <button type="button" role="menuitem" data-native-action="paste">Paste</button>
+              <button type="button" role="menuitem" data-native-action="select-all">Select All</button>
+              <div class="app-menu-separator" role="separator"></div>
+              <button type="button" role="menuitem" data-menu-action="delete-selected">Delete Selected</button>
+              <button type="button" role="menuitem" data-menu-action="rename-selected">Rename Selected</button>
+            </div>
+          </div>
+          <div class="app-menu">
+            <button class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">View</button>
+            <div class="app-menu-dropdown" role="menu" hidden>
+              <button type="button" role="menuitem" data-native-action="reset-zoom">Reset Zoom</button>
+              <button type="button" role="menuitem" data-native-action="zoom-in">Zoom In</button>
+              <button type="button" role="menuitem" data-native-action="zoom-out">Zoom Out</button>
+              <div class="app-menu-separator" role="separator"></div>
+              <button type="button" role="menuitem" data-native-action="toggle-fullscreen">Toggle Full Screen</button>
+            </div>
+          </div>
+          <div class="app-menu">
+            <button class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">Window</button>
+            <div class="app-menu-dropdown" role="menu" hidden>
+              <button type="button" role="menuitem" data-native-action="minimize">Minimize</button>
+              <button type="button" role="menuitem" data-native-action="maximize">Maximize</button>
+              <button type="button" role="menuitem" data-native-action="close">Close</button>
+            </div>
           </div>
         </div>
       </div>

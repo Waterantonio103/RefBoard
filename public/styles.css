@@ -92,12 +92,18 @@ body {
   font-weight: 650;
 }
 
+.app-menus {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
 .app-menu {
   position: relative;
   height: 100%;
   display: flex;
   align-items: center;
-  -webkit-app-region: no-drag;
 }
 
 .app-menu-button {
@@ -121,10 +127,10 @@ body {
 }
 
 .app-menu-dropdown {
-  position: fixed;
+  position: absolute;
   z-index: 35;
   top: 34px;
-  left: 80px;
+  left: 0;
   min-width: 202px;
   padding: 6px;
   border: 1px solid var(--panel-border);

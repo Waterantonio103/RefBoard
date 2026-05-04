@@ -65,6 +65,12 @@ button:focus-visible {
   outline: none;
 }
 
+.text-button {
+  min-width: 72px;
+  height: 34px;
+  padding: 0 12px;
+}
+
 .sidebar {
   position: fixed;
   z-index: 8;
@@ -101,6 +107,86 @@ button:focus-visible {
   stroke-width: 1.8;
 }
 
+.autosave-toggle {
+  width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--button);
+  color: var(--text);
+  box-shadow: 0 10px 26px var(--shadow);
+  backdrop-filter: blur(14px);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.autosave-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.board-bar {
+  position: fixed;
+  z-index: 10;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 112px));
+  pointer-events: none;
+}
+
+.board-bar > * {
+  pointer-events: auto;
+}
+
+.board-title {
+  min-width: 112px;
+  max-width: min(360px, calc(100vw - 190px));
+  height: 38px;
+  padding: 0 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+  font-weight: 650;
+}
+
+.save-state {
+  min-width: 72px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 0 10px;
+  background: var(--panel);
+  color: var(--muted);
+  box-shadow: 0 10px 26px var(--shadow);
+  backdrop-filter: blur(14px);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.save-state[data-state="saved"] {
+  color: #6fd18a;
+}
+
+.save-state[data-state="saving"] {
+  color: var(--accent);
+}
+
+.save-state[data-state="failed"] {
+  color: #ff8c8c;
+}
+
 #status {
   position: fixed;
   z-index: 12;
@@ -123,6 +209,128 @@ button:focus-visible {
 
 #status:not(:empty) {
   opacity: 1;
+}
+
+.board-dialog {
+  width: min(760px, calc(100vw - 28px));
+  max-height: min(720px, calc(100vh - 28px));
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 26px 80px var(--shadow);
+  backdrop-filter: blur(20px);
+}
+
+.board-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.dialog-panel {
+  margin: 0;
+  padding: 16px;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.board-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  max-height: min(590px, calc(100vh - 138px));
+  overflow: auto;
+}
+
+.board-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.board-card img,
+.board-card .empty-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  background:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    var(--bg);
+  background-size: 24px 24px;
+  object-fit: cover;
+}
+
+.empty-thumb {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.board-card-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 650;
+}
+
+.board-card-time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.board-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.board-card-actions button {
+  flex: 1;
+  height: 32px;
+  box-shadow: none;
+}
+
+.danger-button {
+  color: #ff9a9a;
+}
+
+.board-rename {
+  position: fixed;
+  z-index: 25;
+  top: 12px;
+  left: 12px;
+  margin: 0;
+}
+
+.board-rename input {
+  width: min(360px, calc(100vw - 32px));
+  height: 38px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 14px 34px var(--shadow);
+  backdrop-filter: blur(16px);
+  font: inherit;
+  font-weight: 650;
+  outline: none;
 }
 
 #canvasWrap {
@@ -211,5 +419,14 @@ button:focus-visible {
   .icon-button {
     width: 40px;
     height: 40px;
+  }
+
+  .autosave-toggle {
+    width: 40px;
+    min-height: 40px;
+  }
+
+  .board-bar {
+    max-width: calc(100vw - 72px);
   }
 }

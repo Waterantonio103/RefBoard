@@ -22,21 +22,20 @@
           <path d="M8 12h8"></path>
         </svg>
       </button>
-      <button id="saveBtn" class="icon-button" type="button" title="Save JSON" aria-label="Save JSON">
+      <button id="saveBtn" class="icon-button" type="button" title="Save board" aria-label="Save board">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
           <path d="M17 21v-8H7v8"></path>
           <path d="M7 3v5h8"></path>
         </svg>
       </button>
-      <button id="savePngBtn" class="icon-button" type="button" title="Save PNG" aria-label="Save PNG">
+      <button id="openBtn" class="icon-button" type="button" title="Open board" aria-label="Open board">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <path d="M7 10l5 5 5-5"></path>
-          <path d="M12 15V3"></path>
+          <path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path>
         </svg>
       </button>
-      <button id="loadBtn" class="icon-button" type="button" title="Load JSON file" aria-label="Load JSON file">
+      <button id="importBtn" class="icon-button" type="button" title="Import .refboard or JSON" aria-label="Import .refboard or JSON">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
           <path d="M14 2v6h6"></path>
@@ -44,21 +43,37 @@
           <path d="m9 15 3 3 3-3"></path>
         </svg>
       </button>
-      <button id="loadServerBtn" class="icon-button" type="button" title="Load last server save" aria-label="Load last server save">
+      <button id="exportBoardBtn" class="icon-button" type="button" title="Export .refboard" aria-label="Export .refboard">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <path d="m7 10 5-5 5 5"></path>
-          <path d="M12 5v12"></path>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+          <path d="M12 12v6"></path>
+          <path d="m9 15 3-3 3 3"></path>
         </svg>
       </button>
+      <button id="savePngBtn" class="icon-button" type="button" title="Export PNG" aria-label="Export PNG">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <path d="M7 10l5 5 5-5"></path>
+          <path d="M12 15V3"></path>
+        </svg>
+      </button>
+      <label class="autosave-toggle" title="Auto Save">
+        <input id="autoSaveInput" type="checkbox">
+        <span>Auto</span>
+      </label>
       <button id="themeBtn" class="icon-button" type="button" title="Switch theme" aria-label="Switch theme">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3z"></path>
         </svg>
       </button>
       <input id="imageInput" type="file" accept="image/*" multiple hidden>
-      <input id="boardInput" type="file" accept="application/json,.json" hidden>
+      <input id="boardInput" type="file" accept="application/json,.json,.refboard" hidden>
     </aside>
+    <header class="board-bar" aria-label="Board">
+      <button id="boardTitleBtn" class="board-title" type="button" title="Double-click to rename">Board.001</button>
+      <span id="saveState" class="save-state">unsaved</span>
+    </header>
     <span id="status" role="status"></span>
     <div id="contextMenu" class="context-menu" role="menu" hidden>
       <button type="button" role="menuitem" data-action="add-image">Add image</button>
@@ -67,8 +82,21 @@
       <button type="button" role="menuitem" data-action="rename">Rename selected</button>
       <button type="button" role="menuitem" data-action="delete">Delete selected</button>
       <button type="button" role="menuitem" data-action="save">Save board</button>
-      <button type="button" role="menuitem" data-action="save-png">Save PNG</button>
+      <button type="button" role="menuitem" data-action="export-board">Export .refboard</button>
+      <button type="button" role="menuitem" data-action="save-png">Export PNG</button>
     </div>
+    <dialog id="openDialog" class="board-dialog">
+      <form method="dialog" class="dialog-panel">
+        <header class="dialog-header">
+          <h2>Open Board</h2>
+          <button id="closeOpenDialogBtn" class="text-button" value="cancel" type="submit">Close</button>
+        </header>
+        <div id="boardList" class="board-list"></div>
+      </form>
+    </dialog>
+    <form id="boardRenameEditor" class="board-rename" hidden>
+      <input id="boardRenameInput" type="text" autocomplete="off" spellcheck="false" aria-label="Rename board">
+    </form>
     <form id="renameEditor" class="rename-editor" hidden>
       <input id="renameInput" type="text" autocomplete="off" spellcheck="false" aria-label="Rename selected item">
     </form>
@@ -76,6 +104,7 @@
       <div id="stage"></div>
     </main>
     <script src="/vendor/konva.min.js"></script>
+    <script src="/storage.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 # Reference Board
 
-A lightweight local image reference board for Blender and art workflows. It runs a small Node.js server and opens in your browser at `http://localhost:<port>`.
+A lightweight local image reference board for Blender and art workflows. It runs a small Node.js server for static files and remote image import, then stores your boards in your browser with IndexedDB.
 
 ## Features
 
@@ -13,8 +13,12 @@ A lightweight local image reference board for Blender and art workflows. It runs
 - Images attach to frames when their center is inside a frame
 - Moving a frame moves attached images with it
 - Dragging an image out of a frame detaches it
-- Save/load board JSON
-- Local/pasted images are stored in the local `assets` folder by the server
+- Browser-local board library with thumbnails
+- Auto Save to IndexedDB
+- Import `.refboard` files and older RefBoard `.json` files
+- Export portable `.refboard` files with embedded image data
+- Export the board as PNG
+- Local/pasted images are stored in browser IndexedDB
 
 ## Requirements
 
@@ -74,20 +78,25 @@ PORT=3000 npm start
 - Resize images or frames: select one and drag a blue transform handle
 - Create frames: click **New Frame**
 - Delete selected image/frame: `Delete` or `Backspace`
-- Save: **Save JSON** downloads a JSON file and also writes `data/last-board.json`
-- Load: **Load JSON** imports a JSON file
-- Load Last: loads `data/last-board.json`
+- Save: **Save Board** writes the current board to browser IndexedDB
+- Open: shows saved local boards with thumbnails and timestamps
+- Import: loads `.refboard` or older RefBoard `.json` files as unsaved copies
+- Export: **Export .refboard** downloads a self-contained portable board file
+- Export PNG: downloads a flattened PNG of the board contents
+- Auto: toggles delayed Auto Save, which runs about 10 seconds after edits
+- Rename board: double-click the board title in the top-left corner
 
 ## Project Structure
 
 ```text
 ReferenceBoard/
-  assets/          Local image assets saved by the server
-  data/            Last server-saved board JSON
+  assets/          Backward-compatible remote image cache
+  data/            Backward-compatible server save folder
   public/
     index.html
     styles.css
     app.js
+    storage.js
   package.json
   server.js
   README.md
@@ -95,4 +104,10 @@ ReferenceBoard/
 
 ## Notes
 
-Remote image drag/import depends on browser and source-site behavior. The server tries to download the remote image into `assets`; if that fails, the app falls back to using the original URL.
+## Storage
+
+Boards, thumbnails, preferences, and image data are stored in the browser's IndexedDB for this site. Auto Save is on by default and the most recently opened board is restored on startup. Large added images are downscaled to roughly a 2400px maximum side before storage when the browser can decode them.
+
+`.refboard` exports are JSON files that embed image data so they can be imported on another machine or browser profile. Older RefBoard `.json` files can still be imported, but they open as unsaved copies.
+
+Remote image drag/import depends on browser and source-site behavior. The server still attempts to fetch remote images so the browser can store them locally in IndexedDB; if that fails, the app falls back to the original URL where possible.

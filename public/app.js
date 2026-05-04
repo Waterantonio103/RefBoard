@@ -2,10 +2,18 @@ const stageHost = document.getElementById("stage");
 const imageInput = document.getElementById("imageInput");
 const boardInput = document.getElementById("boardInput");
 const statusEl = document.getElementById("status");
+const saveStateEl = document.getElementById("saveState");
 const themeBtn = document.getElementById("themeBtn");
 const contextMenu = document.getElementById("contextMenu");
 const renameEditor = document.getElementById("renameEditor");
 const renameInput = document.getElementById("renameInput");
+const boardTitleBtn = document.getElementById("boardTitleBtn");
+const boardRenameEditor = document.getElementById("boardRenameEditor");
+const boardRenameInput = document.getElementById("boardRenameInput");
+const openDialog = document.getElementById("openDialog");
+const boardList = document.getElementById("boardList");
+const autoSaveInput = document.getElementById("autoSaveInput");
+const storage = window.RefBoardStorage;
 
 const state = {
   images: [],
@@ -27,6 +35,21 @@ let pendingImagePosition = null;
 let contextWorldPosition = null;
 let renameTarget = null;
 let ignoreNextDocumentClick = false;
+let autoSaveTimer = null;
+let isLoadingBoard = false;
+let isSavingBoard = false;
+let autoSaveEnabled = true;
+let currentBoard = {
+  id: null,
+  name: "Board.001",
+  createdAt: null,
+  updatedAt: null,
+  lastOpenedAt: null,
+  thumbnail: null,
+  dirty: false,
+  importedUnsaved: true,
+  saveState: "unsaved"
+};
 
 const stage = new Konva.Stage({
   container: "stage",
@@ -87,6 +110,50 @@ function setStatus(message) {
   }
 }
 
+function makeBoardId() {
+  return `board-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sanitizeBoardName(name) {
+  return String(name || "").trim().replace(/\s+/g, " ");
+}
+
+function updateBoardChrome() {
+  boardTitleBtn.textContent = currentBoard.name || "Untitled Board";
+  boardTitleBtn.title = `${currentBoard.name || "Untitled Board"} - double-click to rename`;
+  saveStateEl.textContent = currentBoard.saveState;
+  saveStateEl.dataset.state = currentBoard.saveState === "save failed" ? "failed" : currentBoard.saveState;
+}
+
+function setSaveState(saveState) {
+  currentBoard.saveState = saveState;
+  updateBoardChrome();
+}
+
+function scheduleAutoSave() {
+  window.clearTimeout(autoSaveTimer);
+  if (!autoSaveEnabled) return;
+  autoSaveTimer = window.setTimeout(() => {
+    saveBoard({ silent: true, fromAutoSave: true });
+  }, 10000);
+}
+
+function markDirty(message) {
+  if (isLoadingBoard) return;
+  currentBoard.dirty = true;
+  setSaveState("unsaved");
+  scheduleAutoSave();
+  if (message) setStatus(message);
+}
+
+async function nextBoardName() {
+  const boards = await storage.listBoards();
+  const used = new Set(boards.map((board) => board.name));
+  let index = 1;
+  while (used.has(`Board.${String(index).padStart(3, "0")}`)) index += 1;
+  return `Board.${String(index).padStart(3, "0")}`;
+}
+
 function hideRenameEditor({ commit = false } = {}) {
   if (!renameTarget) {
     renameEditor.hidden = true;
@@ -120,13 +187,13 @@ function hideRenameEditor({ commit = false } = {}) {
     const entry = nodes.frames.get(target.id);
     if (entry) entry.label.text(frame.name);
     contentLayer.batchDraw();
-    setStatus("Frame renamed");
+    markDirty("Frame renamed");
   }
   if (target.type === "image") {
     const image = findImage(target.id);
     if (!image) return;
     image.name = value || "Image";
-    setStatus("Image renamed");
+    markDirty("Image renamed");
   }
 }
 
@@ -264,18 +331,7 @@ function loadImageElement(src) {
 }
 
 async function persistDataUrl(dataUrl) {
-  try {
-    const response = await fetch("/api/assets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataUrl })
-    });
-    if (!response.ok) throw new Error("Asset save failed.");
-    const payload = await response.json();
-    return payload.url;
-  } catch (_error) {
-    return dataUrl;
-  }
+  return downscaleImageDataUrl(dataUrl);
 }
 
 async function importRemoteUrl(url) {
@@ -301,6 +357,8 @@ async function addImage(src, position) {
       id: makeId("image"),
       name: "Image",
       src,
+      blobId: makeId("blob"),
+      mime: mimeFromDataUrl(src),
       x: Math.round(position.x - size.width / 2),
       y: Math.round(position.y - size.height / 2),
       width: size.width,
@@ -311,7 +369,7 @@ async function addImage(src, position) {
     state.images.push(image);
     createImageNode(image, imageElement);
     selectNode("image", image.id);
-    setStatus("Image added");
+    markDirty("Image added");
   } catch (error) {
     setStatus(error.message);
   }
@@ -342,6 +400,7 @@ function createImageNode(image, imageElement) {
     image.x = Math.round(node.x());
     image.y = Math.round(node.y());
     attachByPosition(image);
+    markDirty();
   });
 
   node.on("transformend", () => {
@@ -352,6 +411,7 @@ function createImageNode(image, imageElement) {
     node.scale({ x: 1, y: 1 });
     node.size({ width: image.width, height: image.height });
     attachByPosition(image);
+    markDirty();
   });
 
   nodes.images.set(image.id, node);
@@ -430,6 +490,7 @@ function createFrameNode(frame) {
     frame.x = Math.round(group.x());
     frame.y = Math.round(group.y());
     activeFrameDrag = null;
+    markDirty();
   });
 
   rect.on("transformend", () => {
@@ -438,6 +499,7 @@ function createFrameNode(frame) {
     rect.scale({ x: 1, y: 1 });
     rect.size({ width: frame.width, height: frame.height });
     state.images.forEach(attachByPosition);
+    markDirty();
   });
 
   nodes.frames.set(frame.id, { group, rect, label });
@@ -462,7 +524,7 @@ function createFrame(position = viewportCenter()) {
   state.frames.push(frame);
   createFrameNode(frame);
   selectNode("frame", frame.id);
-  setStatus("Frame created");
+  markDirty("Frame created");
 }
 
 function renameFrame(id) {
@@ -496,24 +558,31 @@ function clearBoard() {
 }
 
 async function loadBoard(board) {
+  isLoadingBoard = true;
   clearBoard();
   state.viewport = board.viewport || { x: 0, y: 0, scale: 1 };
   stage.position({ x: state.viewport.x || 0, y: state.viewport.y || 0 });
   stage.scale({ x: state.viewport.scale || 1, y: state.viewport.scale || 1 });
 
-  state.frames = Array.isArray(board.frames) ? board.frames : [];
-  state.images = Array.isArray(board.images) ? board.images : [];
+  state.frames = Array.isArray(board.frames) ? board.frames.map((frame) => ({ ...frame })) : [];
+  state.images = Array.isArray(board.images) ? board.images.map((image) => ({ ...image })) : [];
   idCounter = state.frames.length + state.images.length;
 
   state.frames.forEach(createFrameNode);
   for (const image of state.images) {
     try {
+      if (!image.src && image.blobId) {
+        const blob = await storage.getImage(image.blobId);
+        image.src = blob?.dataUrl || "";
+        image.mime = image.mime || blob?.mime;
+      }
       const element = await loadImageElement(image.src);
       createImageNode(image, element);
     } catch (_error) {
       image.missing = true;
     }
   }
+  isLoadingBoard = false;
   setStatus("Board loaded");
 }
 
@@ -524,48 +593,379 @@ function serializedBoard() {
     scale: Number(stage.scaleX().toFixed(4))
   };
   return {
-    version: 1,
-    savedAt: new Date().toISOString(),
+    id: currentBoard.id,
+    name: currentBoard.name,
+    createdAt: currentBoard.createdAt,
+    updatedAt: currentBoard.updatedAt,
+    lastOpenedAt: currentBoard.lastOpenedAt,
+    thumbnail: currentBoard.thumbnail,
+    version: 2,
     viewport: state.viewport,
-    frames: state.frames,
-    images: state.images
+    frames: state.frames.map((frame) => ({ ...frame })),
+    images: state.images.map((image) => ({ ...image }))
   };
 }
 
-async function saveBoard() {
-  const board = serializedBoard();
-  const json = JSON.stringify(board, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  link.href = url;
-  link.download = `reference-board-${stamp}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
+async function dataUrlFromRenderableSource(src) {
+  if (!src) throw new Error("Image source is missing.");
+  if (/^data:image\//i.test(src)) return persistDataUrl(src);
+
+  const imageElement = await loadImageElement(src);
+  const canvas = document.createElement("canvas");
+  canvas.width = imageElement.naturalWidth || imageElement.width;
+  canvas.height = imageElement.naturalHeight || imageElement.height;
+  const context = canvas.getContext("2d");
+  context.drawImage(imageElement, 0, 0);
+  return persistDataUrl(canvas.toDataURL("image/png"));
+}
+
+async function persistBoardImages() {
+  const now = new Date().toISOString();
+  const savedImages = [];
+
+  for (const image of state.images) {
+    const saved = { ...image };
+    try {
+      const dataUrl = await dataUrlFromRenderableSource(image.src);
+      saved.blobId = saved.blobId || makeId("blob");
+      saved.mime = mimeFromDataUrl(dataUrl);
+      saved.src = dataUrl;
+      image.blobId = saved.blobId;
+      image.mime = saved.mime;
+      await storage.putImage({
+        id: saved.blobId,
+        boardId: currentBoard.id,
+        dataUrl,
+        mime: saved.mime,
+        name: saved.name || "Image",
+        createdAt: now,
+        updatedAt: now
+      });
+      delete saved.missing;
+    } catch (_error) {
+      saved.storageMissing = true;
+    }
+    if (!saved.storageMissing) delete saved.src;
+    savedImages.push(saved);
+  }
+
+  return savedImages;
+}
+
+function generateThumbnail() {
+  const rect = boardContentBounds();
+  if (!rect) return null;
 
   try {
-    await fetch("/api/board", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json
+    const padding = 24;
+    return contentLayer.toDataURL({
+      x: Math.floor(rect.x - padding),
+      y: Math.floor(rect.y - padding),
+      width: Math.ceil(rect.width + padding * 2),
+      height: Math.ceil(rect.height + padding * 2),
+      pixelRatio: 0.35,
+      mimeType: "image/jpeg",
+      quality: 0.82
     });
-    setStatus("Board saved");
   } catch (_error) {
-    setStatus("JSON downloaded");
+    return null;
   }
 }
 
-async function loadServerBoard() {
-  try {
-    const response = await fetch("/api/board");
-    if (!response.ok) throw new Error("No saved board found");
-    const board = await response.json();
-    await loadBoard(board);
-    setStatus("Last save loaded");
-  } catch (error) {
-    setStatus(error.message);
+async function saveBoard(options = {}) {
+  if (isSavingBoard) return false;
+  const { silent = false, fromAutoSave = false } = options;
+  const name = sanitizeBoardName(currentBoard.name);
+  if (!name) {
+    setStatus("Board name is required");
+    setSaveState("save failed");
+    return false;
   }
+
+  const conflict = await storage.findNameConflict(name, currentBoard.id);
+  if (conflict) {
+    setStatus(`A board named "${name}" already exists`);
+    setSaveState("save failed");
+    return false;
+  }
+
+  if (!fromAutoSave && currentBoard.id) {
+    setStatus(`Overwriting "${name}"`);
+  }
+
+  isSavingBoard = true;
+  setSaveState("saving");
+  window.clearTimeout(autoSaveTimer);
+
+  try {
+    const now = new Date().toISOString();
+    currentBoard.id = currentBoard.id || makeBoardId();
+    currentBoard.name = name;
+    currentBoard.createdAt = currentBoard.createdAt || now;
+    currentBoard.updatedAt = now;
+    currentBoard.lastOpenedAt = now;
+    currentBoard.thumbnail = generateThumbnail();
+
+    const base = serializedBoard();
+    const board = {
+      ...base,
+      images: await persistBoardImages(),
+      updatedAt: now,
+      lastOpenedAt: now,
+      thumbnail: currentBoard.thumbnail
+    };
+
+    await storage.cleanupImagesForBoard(board);
+    await storage.putBoard(board);
+    await storage.setPref("lastBoardId", currentBoard.id);
+    currentBoard.dirty = false;
+    currentBoard.importedUnsaved = false;
+    setSaveState("saved");
+    if (!silent) setStatus(`Saved "${currentBoard.name}"`);
+    return true;
+  } catch (error) {
+    currentBoard.dirty = true;
+    setSaveState("save failed");
+    setStatus(error.name === "QuotaExceededError" ? "Save failed: browser storage quota exceeded" : "Save failed");
+    return false;
+  } finally {
+    isSavingBoard = false;
+  }
+}
+
+async function exportRefboard() {
+  const board = serializedBoard();
+  const exportImages = [];
+  for (const image of state.images) {
+    const exported = { ...image };
+    try {
+      exported.imageData = await dataUrlFromRenderableSource(image.src);
+      exported.mime = mimeFromDataUrl(exported.imageData);
+    } catch (_error) {
+      if (image.blobId) {
+        const blob = await storage.getImage(image.blobId);
+        exported.imageData = blob?.dataUrl || "";
+      }
+    }
+    if (exported.imageData) delete exported.src;
+    exportImages.push(exported);
+  }
+
+  const payload = {
+    format: "refboard",
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    board: {
+      ...board,
+      images: exportImages
+    }
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const fileSafeName = (currentBoard.name || "reference-board").replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "");
+  link.href = url;
+  link.download = `${fileSafeName || "reference-board"}.refboard`;
+  link.click();
+  URL.revokeObjectURL(url);
+  setStatus("RefBoard exported");
+}
+
+async function availableNameFrom(baseName) {
+  const fallback = sanitizeBoardName(baseName) || (await nextBoardName());
+  const boards = await storage.listBoards();
+  const used = new Set(boards.map((board) => board.name));
+  if (!used.has(fallback)) return fallback;
+
+  let index = 2;
+  while (used.has(`${fallback} ${index}`)) index += 1;
+  return `${fallback} ${index}`;
+}
+
+async function ensureCurrentBoardSaved() {
+  if (!currentBoard.dirty) return true;
+  const shouldSave = window.confirm("Save current board before opening another board?");
+  if (!shouldSave) return false;
+  return saveBoard();
+}
+
+async function openSavedBoard(id) {
+  if (!(await ensureCurrentBoardSaved())) return;
+  const board = await storage.getBoard(id);
+  if (!board) {
+    setStatus("Board not found");
+    return;
+  }
+
+  const now = new Date().toISOString();
+  currentBoard = {
+    id: board.id,
+    name: board.name,
+    createdAt: board.createdAt,
+    updatedAt: board.updatedAt,
+    lastOpenedAt: now,
+    thumbnail: board.thumbnail,
+    dirty: false,
+    importedUnsaved: false,
+    saveState: "saved"
+  };
+  updateBoardChrome();
+  await loadBoard(board);
+  await storage.putBoard({ ...board, lastOpenedAt: now });
+  await storage.setPref("lastBoardId", board.id);
+  openDialog.close();
+  setSaveState("saved");
+}
+
+function boardTimeLabel(board) {
+  const value = board.updatedAt || board.createdAt || "";
+  if (!value) return "No timestamp";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
+async function renderOpenPicker() {
+  const boards = await storage.listBoards();
+  boardList.innerHTML = "";
+
+  if (!boards.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-thumb";
+    empty.textContent = "No saved boards";
+    boardList.append(empty);
+    return;
+  }
+
+  boards.forEach((board) => {
+    const card = document.createElement("article");
+    card.className = "board-card";
+    card.dataset.boardId = board.id;
+
+    if (board.thumbnail) {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = board.thumbnail;
+      card.append(img);
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "empty-thumb";
+      empty.textContent = "No preview";
+      card.append(empty);
+    }
+
+    const title = document.createElement("div");
+    title.className = "board-card-title";
+    title.textContent = board.name;
+    card.append(title);
+
+    const time = document.createElement("div");
+    time.className = "board-card-time";
+    time.textContent = boardTimeLabel(board);
+    card.append(time);
+
+    const actions = document.createElement("div");
+    actions.className = "board-card-actions";
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.dataset.action = "open";
+    openButton.textContent = "Open";
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.dataset.action = "delete";
+    deleteButton.className = "danger-button";
+    deleteButton.textContent = "Delete";
+    actions.append(openButton, deleteButton);
+    card.append(actions);
+    boardList.append(card);
+  });
+}
+
+async function showOpenPicker() {
+  await renderOpenPicker();
+  openDialog.showModal();
+}
+
+function normalizeImportedBoard(raw, fallbackName) {
+  const source = raw?.format === "refboard" && raw.board ? raw.board : raw;
+  const images = Array.isArray(source.images)
+    ? source.images.map((image) => {
+        const imported = { ...image };
+        imported.id = imported.id || makeId("image");
+        imported.blobId = makeId("blob");
+        imported.src = imported.imageData || imported.src || "";
+        imported.mime = imported.mime || mimeFromDataUrl(imported.src);
+        delete imported.imageData;
+        return imported;
+      })
+    : [];
+
+  return {
+    version: 2,
+    name: source.name || fallbackName,
+    viewport: source.viewport || { x: 0, y: 0, scale: 1 },
+    frames: Array.isArray(source.frames) ? source.frames : [],
+    images
+  };
+}
+
+async function importBoardFile(file) {
+  if (!(await ensureCurrentBoardSaved())) {
+    boardInput.value = "";
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const imported = normalizeImportedBoard(JSON.parse(text), file.name.replace(/\.(refboard|json)$/i, ""));
+    const name = await availableNameFrom(imported.name || file.name.replace(/\.(refboard|json)$/i, ""));
+    currentBoard = {
+      id: null,
+      name,
+      createdAt: null,
+      updatedAt: null,
+      lastOpenedAt: null,
+      thumbnail: null,
+      dirty: true,
+      importedUnsaved: true,
+      saveState: "unsaved"
+    };
+    updateBoardChrome();
+    await loadBoard(imported);
+    markDirty("Imported as unsaved copy");
+  } catch (error) {
+    setStatus(error.message || "Import failed");
+  } finally {
+    boardInput.value = "";
+  }
+}
+
+function showBoardRenameEditor() {
+  boardRenameInput.value = currentBoard.name || "";
+  boardRenameEditor.hidden = false;
+  boardRenameInput.focus();
+  boardRenameInput.select();
+}
+
+async function hideBoardRenameEditor({ commit = false } = {}) {
+  if (boardRenameEditor.hidden) return;
+  boardRenameEditor.hidden = true;
+  if (!commit) return;
+
+  const name = sanitizeBoardName(boardRenameInput.value);
+  if (!name || name === currentBoard.name) return;
+
+  const conflict = await storage.findNameConflict(name, currentBoard.id);
+  if (conflict) {
+    setStatus(`A board named "${name}" already exists`);
+    return;
+  }
+
+  currentBoard.name = name;
+  updateBoardChrome();
+  markDirty("Board renamed");
 }
 
 function fileToDataUrl(file) {
@@ -584,6 +984,30 @@ function blobToDataUrl(blob) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+}
+
+function mimeFromDataUrl(dataUrl) {
+  return /^data:([^;,]+)/i.exec(dataUrl || "")?.[1] || "image/png";
+}
+
+async function downscaleImageDataUrl(dataUrl) {
+  const mime = mimeFromDataUrl(dataUrl);
+  if (mime === "image/gif" || mime === "image/svg+xml") return dataUrl;
+
+  const imageElement = await loadImageElement(dataUrl);
+  const maxSide = 2400;
+  const naturalWidth = imageElement.naturalWidth || imageElement.width;
+  const naturalHeight = imageElement.naturalHeight || imageElement.height;
+  const ratio = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
+  if (ratio >= 1 && dataUrl.length < 12_000_000) return dataUrl;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(naturalWidth * ratio));
+  canvas.height = Math.max(1, Math.round(naturalHeight * ratio));
+  const context = canvas.getContext("2d");
+  context.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
+  const outputMime = mime === "image/jpeg" ? "image/jpeg" : "image/webp";
+  return canvas.toDataURL(outputMime, 0.9);
 }
 
 function downloadDataUrl(dataUrl, fileName) {
@@ -679,8 +1103,17 @@ function imageUrlFromHtml(html) {
 
 async function addUrl(url, position) {
   if (!url) return;
-  const src = await importRemoteUrl(url.trim());
-  await addImage(src, position);
+  const importedUrl = await importRemoteUrl(url.trim());
+  try {
+    const response = await fetch(importedUrl);
+    if (!response.ok) throw new Error("Image request failed.");
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) throw new Error("The URL did not return an image.");
+    const dataUrl = await blobToDataUrl(blob);
+    await addImage(await persistDataUrl(dataUrl), position);
+  } catch (_error) {
+    await addImage(importedUrl, position);
+  }
 }
 
 function deleteSelection() {
@@ -702,6 +1135,7 @@ function deleteSelection() {
   }
   selectNode(null, null);
   contentLayer.batchDraw();
+  markDirty("Deleted");
 }
 
 function boardContentBounds() {
@@ -736,7 +1170,7 @@ function savePng() {
       mimeType: "image/png"
     });
     downloadDataUrl(dataUrl, `reference-board-${stamp}.png`);
-    setStatus("PNG saved");
+    setStatus("PNG exported");
   } catch (_error) {
     setStatus("PNG export failed for a remote image");
   }
@@ -801,9 +1235,11 @@ stage.on("mousemove", (event) => {
 });
 
 window.addEventListener("mouseup", () => {
+  const wasPanning = isPanning;
   isPanning = false;
   panLast = null;
   stageHost.classList.remove("panning");
+  if (wasPanning) markDirty();
 });
 
 stageHost.addEventListener("contextmenu", (event) => {
@@ -826,6 +1262,7 @@ stage.on("wheel", (event) => {
     x: pointer.x - mousePointTo.x * newScale,
     y: pointer.y - mousePointTo.y * newScale
   });
+  markDirty();
 });
 
 window.addEventListener("resize", () => {
@@ -887,11 +1324,62 @@ window.addEventListener("keydown", (event) => {
 document.getElementById("addImageBtn").addEventListener("click", () => imageInput.click());
 document.getElementById("addFrameBtn").addEventListener("click", () => createFrame());
 document.getElementById("saveBtn").addEventListener("click", saveBoard);
+document.getElementById("openBtn").addEventListener("click", showOpenPicker);
+document.getElementById("importBtn").addEventListener("click", () => boardInput.click());
+document.getElementById("exportBoardBtn").addEventListener("click", exportRefboard);
 document.getElementById("savePngBtn").addEventListener("click", savePng);
-document.getElementById("loadBtn").addEventListener("click", () => boardInput.click());
-document.getElementById("loadServerBtn").addEventListener("click", loadServerBoard);
 themeBtn.addEventListener("click", () => {
   setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+});
+
+autoSaveInput.addEventListener("change", async () => {
+  autoSaveEnabled = autoSaveInput.checked;
+  await storage.setPref("autoSave", autoSaveEnabled);
+  setStatus(autoSaveEnabled ? "Auto Save on" : "Auto Save off");
+  if (autoSaveEnabled && currentBoard.dirty) scheduleAutoSave();
+});
+
+boardTitleBtn.addEventListener("dblclick", showBoardRenameEditor);
+
+boardRenameEditor.addEventListener("submit", (event) => {
+  event.preventDefault();
+  hideBoardRenameEditor({ commit: true });
+});
+
+boardRenameEditor.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    hideBoardRenameEditor();
+  }
+});
+
+boardRenameEditor.addEventListener("click", (event) => {
+  event.stopPropagation();
+});
+
+boardList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  const card = event.target.closest(".board-card");
+  if (!button || !card) return;
+
+  const boardId = card.dataset.boardId;
+  if (button.dataset.action === "open") {
+    await openSavedBoard(boardId);
+  }
+  if (button.dataset.action === "delete") {
+    const board = await storage.getBoard(boardId);
+    if (board && window.confirm(`Delete "${board.name}"?`)) {
+      await storage.deleteBoard(boardId);
+      if (currentBoard.id === boardId) {
+        currentBoard.id = null;
+        currentBoard.dirty = true;
+        currentBoard.importedUnsaved = true;
+        setSaveState("unsaved");
+      }
+      await renderOpenPicker();
+      setStatus("Board deleted");
+    }
+  }
 });
 
 contextMenu.addEventListener("click", (event) => {
@@ -910,12 +1398,16 @@ contextMenu.addEventListener("click", (event) => {
   if (action === "rename") renameSelection();
   if (action === "delete") deleteSelection();
   if (action === "save") saveBoard();
+  if (action === "export-board") exportRefboard();
   if (action === "save-png") savePng();
 });
 
 document.addEventListener("click", (event) => {
   if (ignoreNextDocumentClick) return;
   if (!renameEditor.hidden && !renameEditor.contains(event.target)) hideRenameEditor({ commit: true });
+  if (!boardRenameEditor.hidden && !boardRenameEditor.contains(event.target) && event.target !== boardTitleBtn) {
+    hideBoardRenameEditor({ commit: true });
+  }
   if (!contextMenu.hidden && !contextMenu.contains(event.target)) hideContextMenu();
 });
 
@@ -962,15 +1454,61 @@ imageInput.addEventListener("change", async () => {
 boardInput.addEventListener("change", async () => {
   const file = boardInput.files[0];
   if (!file) return;
-  try {
-    const text = await file.text();
-    await loadBoard(JSON.parse(text));
-    boardInput.value = "";
-  } catch (error) {
-    setStatus(error.message);
-  }
+  await importBoardFile(file);
 });
+
+async function createBlankBoard() {
+  const name = await nextBoardName();
+  currentBoard = {
+    id: null,
+    name,
+    createdAt: null,
+    updatedAt: null,
+    lastOpenedAt: null,
+    thumbnail: null,
+    dirty: false,
+    importedUnsaved: true,
+    saveState: "unsaved"
+  };
+  await loadBoard({ viewport: { x: 0, y: 0, scale: 1 }, frames: [], images: [] });
+  updateBoardChrome();
+}
+
+async function restoreStartupBoard() {
+  autoSaveEnabled = await storage.getPref("autoSave", true);
+  autoSaveInput.checked = autoSaveEnabled;
+
+  const lastBoardId = await storage.getPref("lastBoardId", null);
+  const boards = await storage.listBoards();
+  const mostRecentlyOpened = [...boards].sort((a, b) =>
+    String(b.lastOpenedAt || b.updatedAt || "").localeCompare(String(a.lastOpenedAt || a.updatedAt || ""))
+  )[0];
+  const lastBoard = (lastBoardId && boards.find((board) => board.id === lastBoardId)) || mostRecentlyOpened;
+
+  if (!lastBoard) {
+    await createBlankBoard();
+    setStatus("New board ready");
+    return;
+  }
+
+  currentBoard = {
+    id: lastBoard.id,
+    name: lastBoard.name,
+    createdAt: lastBoard.createdAt,
+    updatedAt: lastBoard.updatedAt,
+    lastOpenedAt: lastBoard.lastOpenedAt,
+    thumbnail: lastBoard.thumbnail,
+    dirty: false,
+    importedUnsaved: false,
+    saveState: "saved"
+  };
+  updateBoardChrome();
+  await loadBoard(lastBoard);
+  setSaveState("saved");
+}
 
 resizeStage();
 setTheme(localStorage.getItem("reference-board-theme") || "dark");
-setStatus("Middle mouse pans. Mouse wheel zooms. Drop, paste, or add images.");
+restoreStartupBoard().catch((error) => {
+  setStatus(error.message || "Storage failed");
+});

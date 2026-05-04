@@ -3,10 +3,35 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: file: http: https:; connect-src 'self' data: blob: http: https:;">
     <title>Reference Board</title>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="styles.css">
   </head>
   <body tabindex="-1">
+    <header class="app-titlebar" aria-label="Application window">
+      <div class="app-titlebar-drag">
+        <img class="app-titlebar-icon" src="app-icon.svg" alt="" width="18" height="18">
+        <span class="app-titlebar-title">Reference Board</span>
+      </div>
+      <div class="window-controls" aria-label="Window controls">
+        <button id="windowMinimizeBtn" class="window-control" type="button" title="Minimize" aria-label="Minimize">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2 6h8"></path>
+          </svg>
+        </button>
+        <button id="windowMaximizeBtn" class="window-control" type="button" title="Maximize" aria-label="Maximize">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M3 3h6v6H3z"></path>
+          </svg>
+        </button>
+        <button id="windowCloseBtn" class="window-control window-control-close" type="button" title="Close" aria-label="Close">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M3 3l6 6"></path>
+            <path d="M9 3L3 9"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
     <aside class="sidebar" aria-label="Reference Board tools">
       <button id="addImageBtn" class="icon-button" type="button" title="Add images from disk" aria-label="Add images from disk">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -103,8 +128,8 @@
     <main id="canvasWrap">
       <div id="stage"></div>
     </main>
-    <script src="/vendor/konva.min.js"></script>
-    <script src="/storage.js"></script>
-    <script src="/app.js"></script>
+    <script src="vendor/konva.min.js"></script>
+    <script src="storage.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>

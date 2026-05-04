@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Reference Board icon">
+  <defs>
+    <linearGradient id="base" x1="42" y1="30" x2="218" y2="226" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#75A7FF"/>
+      <stop offset="0.55" stop-color="#4A6CFF"/>
+      <stop offset="1" stop-color="#32D59B"/>
+    </linearGradient>
+    <linearGradient id="card" x1="72" y1="55" x2="190" y2="208" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCE6F8"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="#15171B"/>
+  <path d="M42 72c0-18 14-32 32-32h108c18 0 32 14 32 32v112c0 18-14 32-32 32H74c-18 0-32-14-32-32V72Z" fill="url(#base)"/>
+  <path d="M76 67h92c10 0 18 8 18 18v82c0 10-8 18-18 18H76c-10 0-18-8-18-18V85c0-10 8-18 18-18Z" fill="url(#card)" opacity=".96"/>
+  <path d="M72 156l31-32 25 24 15-16 33 34v1H72v-11Z" fill="#2B3444"/>
+  <path d="M93 95h47" stroke="#2B3444" stroke-width="12" stroke-linecap="round"/>
+  <path d="M93 116h72" stroke="#75A7FF" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="160" cy="96" r="11" fill="#32D59B"/>
+  <path d="M58 205h140" stroke="#FFFFFF" stroke-opacity=".22" stroke-width="10" stroke-linecap="round"/>
+</svg>

@@ -2,9 +2,14 @@
   "name": "reference-board",
   "version": "1.0.0",
   "description": "A lightweight local image reference board for Blender and art workflows.",
-  "main": "server.js",
+  "author": "Reference Board",
+  "main": "electron/main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "electron .",
+    "start:web": "node server.js",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win nsis",
+    "build:linux": "electron-builder --linux AppImage"
   },
   "keywords": [
     "reference",
@@ -13,8 +18,46 @@
     "art"
   ],
   "license": "MIT",
+  "build": {
+    "appId": "com.referenceboard.app",
+    "productName": "Reference Board",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "public/**/*",
+      "package.json",
+      "server.js"
+    ],
+    "win": {
+      "icon": "electron/app-icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "linux": {
+      "icon": "electron/app-icon.png",
+      "target": [
+        "AppImage"
+      ],
+      "category": "Graphics"
+    }
+  },
   "dependencies": {
     "express": "^4.19.2",
     "konva": "^9.3.14"
+  },
+  "devDependencies": {
+    "electron": "^41.5.0",
+    "electron-builder": "^26.8.1"
   }
 }

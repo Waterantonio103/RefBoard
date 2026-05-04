@@ -13,6 +13,9 @@ const boardRenameInput = document.getElementById("boardRenameInput");
 const openDialog = document.getElementById("openDialog");
 const boardList = document.getElementById("boardList");
 const autoSaveInput = document.getElementById("autoSaveInput");
+const windowMinimizeBtn = document.getElementById("windowMinimizeBtn");
+const windowMaximizeBtn = document.getElementById("windowMaximizeBtn");
+const windowCloseBtn = document.getElementById("windowCloseBtn");
 const storage = window.RefBoardStorage;
 
 const state = {
@@ -335,6 +338,15 @@ async function persistDataUrl(dataUrl) {
 }
 
 async function importRemoteUrl(url) {
+  if (window.referenceBoard?.importImageFromUrl) {
+    try {
+      const payload = await window.referenceBoard.importImageFromUrl(url);
+      if (payload?.dataUrl) return payload.dataUrl;
+    } catch (_error) {
+      return url;
+    }
+  }
+
   try {
     const response = await fetch("/api/import-url", {
       method: "POST",
@@ -1196,6 +1208,31 @@ function showContextMenu(clientX, clientY, position) {
   contextMenu.style.top = `${Math.max(8, y)}px`;
 }
 
+function runDesktopMenuAction(action) {
+  const position = viewportCenter();
+  if (action === "add-images") {
+    pendingImagePosition = position;
+    imageInput.click();
+  }
+  if (action === "new-frame") createFrame(position);
+  if (action === "save-board") saveBoard();
+  if (action === "open-board") showOpenPicker();
+  if (action === "import-board") boardInput.click();
+  if (action === "export-board") exportRefboard();
+  if (action === "export-png") savePng();
+  if (action === "delete-selected") deleteSelection();
+  if (action === "rename-selected") {
+    if (selected?.type === "frame") {
+      const frame = state.frames.find((item) => item.id === selected.id);
+      if (frame) showRenameEditor("frame", frame.id, worldToScreen(frame.x, frame.y - 40));
+    }
+    if (selected?.type === "image") {
+      const image = state.images.find((item) => item.id === selected.id);
+      if (image) showRenameEditor("image", image.id, worldToScreen(image.x + image.width / 2, image.y + image.height / 2));
+    }
+  }
+}
+
 stage.on("mousedown", (event) => {
   hideContextMenu();
   if (!renameEditor.hidden && event.evt.button !== 2) hideRenameEditor({ commit: true });
@@ -1328,6 +1365,10 @@ document.getElementById("openBtn").addEventListener("click", showOpenPicker);
 document.getElementById("importBtn").addEventListener("click", () => boardInput.click());
 document.getElementById("exportBoardBtn").addEventListener("click", exportRefboard);
 document.getElementById("savePngBtn").addEventListener("click", savePng);
+window.referenceBoard?.onMenuAction?.(runDesktopMenuAction);
+windowMinimizeBtn?.addEventListener("click", () => window.referenceBoard?.windowControl?.("minimize"));
+windowMaximizeBtn?.addEventListener("click", () => window.referenceBoard?.windowControl?.("maximize"));
+windowCloseBtn?.addEventListener("click", () => window.referenceBoard?.windowControl?.("close"));
 themeBtn.addEventListener("click", () => {
   setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
 });

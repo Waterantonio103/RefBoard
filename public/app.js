@@ -40,6 +40,7 @@ let contextWorldPosition = null;
 let renameTarget = null;
 let ignoreNextDocumentClick = false;
 let autoSaveTimer = null;
+let saveStateTimer = null;
 let isLoadingBoard = false;
 let isSavingBoard = false;
 let autoSaveEnabled = true;
@@ -80,6 +81,60 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function motionDuration(seconds) {
+  return prefersReducedMotion() ? 0 : seconds;
+}
+
+function setNodeMotion(node, attrs, duration = 0.12) {
+  if (!node) return;
+  if (prefersReducedMotion()) {
+    node.setAttrs(attrs);
+    contentLayer.batchDraw();
+    overlayLayer.batchDraw();
+    return;
+  }
+  node.to({
+    ...attrs,
+    duration,
+    easing: Konva.Easings.EaseOut
+  });
+}
+
+function imageMotionAttrs({ hovered = false, selected: isSelected = false, active = false } = {}) {
+  if (active) {
+    return { shadowColor: "#000000", shadowBlur: 24, shadowOffsetY: 12, shadowOpacity: 0.36, opacity: 0.96 };
+  }
+  if (isSelected) {
+    return { shadowColor: cssVar("--accent"), shadowBlur: 18, shadowOffsetY: 7, shadowOpacity: 0.28, opacity: 1 };
+  }
+  if (hovered) {
+    return { shadowColor: "#000000", shadowBlur: 16, shadowOffsetY: 7, shadowOpacity: 0.28, opacity: 1 };
+  }
+  return { shadowColor: "#000000", shadowBlur: 0, shadowOffsetY: 0, shadowOpacity: 0, opacity: 1 };
+}
+
+function applyImageMotion(node, overrides = {}) {
+  if (!node) return;
+  const isSelected = selected?.type === "image" && selected.id === node.id();
+  setNodeMotion(node, imageMotionAttrs({ selected: isSelected, ...overrides }), motionDuration(0.12));
+}
+
+function updateItemMotion() {
+  nodes.images.forEach((node) => {
+    applyImageMotion(node, { hovered: Boolean(node.getAttr("isHovered")), active: Boolean(node.getAttr("isActive")) });
+  });
+  nodes.frames.forEach(({ rect }, id) => {
+    const isSelected = selected?.type === "frame" && selected.id === id;
+    rect.stroke(isSelected ? cssVar("--accent") : cssVar("--frame-stroke"));
+    rect.strokeWidth(isSelected ? 2.5 : 2);
+  });
+  contentLayer.batchDraw();
+}
+
 function applyCanvasTheme() {
   const accent = cssVar("--accent");
   transformer.borderStroke(accent);
@@ -87,9 +142,10 @@ function applyCanvasTheme() {
   transformer.anchorStroke(accent);
   nodes.frames.forEach(({ rect, label }) => {
     rect.fill(cssVar("--frame-fill"));
-    rect.stroke(cssVar("--frame-stroke"));
+    rect.stroke(selected?.type === "frame" && selected.id === rect.getParent()?.id() ? accent : cssVar("--frame-stroke"));
     label.fill(cssVar("--frame-title"));
   });
+  updateItemMotion();
   contentLayer.batchDraw();
   overlayLayer.batchDraw();
 }
@@ -125,13 +181,28 @@ function sanitizeBoardName(name) {
 function updateBoardChrome() {
   boardTitleBtn.textContent = currentBoard.name || "Untitled Board";
   boardTitleBtn.title = `${currentBoard.name || "Untitled Board"} - double-click to rename`;
-  saveStateEl.textContent = currentBoard.saveState;
+  saveStateEl.replaceChildren();
+  const text = document.createElement("span");
+  text.className = "save-state-text";
+  text.textContent = currentBoard.saveState;
+  saveStateEl.append(text);
   saveStateEl.dataset.state = currentBoard.saveState === "save failed" ? "failed" : currentBoard.saveState;
+  saveStateEl.setAttribute("aria-label", currentBoard.saveState);
 }
 
 function setSaveState(saveState) {
+  window.clearTimeout(saveStateTimer);
   currentBoard.saveState = saveState;
   updateBoardChrome();
+  if (saveState === "saved") {
+    saveStateTimer = window.setTimeout(() => {
+      if (currentBoard.saveState !== "saved") return;
+      saveStateEl.dataset.state = "saved-check";
+      saveStateEl.setAttribute("aria-label", "saved");
+      const text = saveStateEl.querySelector(".save-state-text");
+      if (text) text.textContent = "";
+    }, 2000);
+  }
 }
 
 function scheduleAutoSave() {
@@ -310,6 +381,7 @@ function selectNode(type, id) {
     selected = null;
     transformer.nodes([]);
   }
+  updateItemMotion();
   overlayLayer.batchDraw();
 }
 
@@ -396,12 +468,35 @@ function createImageNode(image, imageElement) {
     y: image.y,
     width: image.width,
     height: image.height,
-    draggable: true
+    draggable: true,
+    shadowColor: "#000000",
+    shadowBlur: 0,
+    shadowOffsetY: 0,
+    shadowOpacity: 0
+  });
+
+  node.on("mouseenter", () => {
+    stage.container().style.cursor = "grab";
+    node.setAttr("isHovered", true);
+    applyImageMotion(node, { hovered: true });
+  });
+
+  node.on("mouseleave", () => {
+    stage.container().style.cursor = "default";
+    node.setAttr("isHovered", false);
+    applyImageMotion(node, { hovered: false });
   });
 
   node.on("mousedown touchstart", (event) => {
     event.cancelBubble = true;
     selectNode("image", image.id);
+  });
+
+  node.on("dragstart", () => {
+    stage.container().style.cursor = "grabbing";
+    node.setAttr("isActive", true);
+    node.moveToTop();
+    applyImageMotion(node, { active: true });
   });
 
   node.on("dragmove", () => {
@@ -410,13 +505,22 @@ function createImageNode(image, imageElement) {
   });
 
   node.on("dragend", () => {
+    node.setAttr("isActive", false);
+    stage.container().style.cursor = node.getAttr("isHovered") ? "grab" : "default";
     image.x = Math.round(node.x());
     image.y = Math.round(node.y());
     attachByPosition(image);
+    applyImageMotion(node, { hovered: Boolean(node.getAttr("isHovered")) });
     markDirty();
   });
 
+  node.on("transformstart", () => {
+    node.setAttr("isActive", true);
+    applyImageMotion(node, { active: true });
+  });
+
   node.on("transformend", () => {
+    node.setAttr("isActive", false);
     image.x = Math.round(node.x());
     image.y = Math.round(node.y());
     image.width = Math.max(16, Math.round(node.width() * node.scaleX()));
@@ -424,6 +528,7 @@ function createImageNode(image, imageElement) {
     node.scale({ x: 1, y: 1 });
     node.size({ width: image.width, height: image.height });
     attachByPosition(image);
+    applyImageMotion(node, { hovered: Boolean(node.getAttr("isHovered")) });
     markDirty();
   });
 
@@ -479,6 +584,9 @@ function createFrameNode(frame) {
 
   group.on("dragstart", () => {
     activeFrameDrag = { id: frame.id, x: group.x(), y: group.y() };
+    rect.stroke(cssVar("--accent"));
+    rect.strokeWidth(2.5);
+    contentLayer.batchDraw();
   });
 
   group.on("dragmove", () => {
@@ -503,7 +611,14 @@ function createFrameNode(frame) {
     frame.x = Math.round(group.x());
     frame.y = Math.round(group.y());
     activeFrameDrag = null;
+    updateItemMotion();
     markDirty();
+  });
+
+  rect.on("transformstart", () => {
+    rect.stroke(cssVar("--accent"));
+    rect.strokeWidth(2.5);
+    contentLayer.batchDraw();
   });
 
   rect.on("transformend", () => {
@@ -512,6 +627,7 @@ function createFrameNode(frame) {
     rect.scale({ x: 1, y: 1 });
     rect.size({ width: frame.width, height: frame.height });
     state.images.forEach(attachByPosition);
+    updateItemMotion();
     markDirty();
   });
 

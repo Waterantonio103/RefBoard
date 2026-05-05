@@ -88,6 +88,7 @@
     </header>
     <aside class="sidebar" aria-label="Reference Board tools">
       <button id="addImageBtn" class="icon-button" type="button" title="Add images from disk" aria-label="Add images from disk">
+        <span class="icon-button-label" aria-hidden="true">Add images from disk</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 5h16v14H4z"></path>
           <path d="m4 16 5-5 4 4 2-2 5 5"></path>
@@ -95,6 +96,7 @@
         </svg>
       </button>
       <button id="addFrameBtn" class="icon-button" type="button" title="Create frame" aria-label="Create frame">
+        <span class="icon-button-label" aria-hidden="true">Create frame</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 5h14v14H5z"></path>
           <path d="M12 8v8"></path>
@@ -102,6 +104,7 @@
         </svg>
       </button>
       <button id="saveBtn" class="icon-button" type="button" title="Save board" aria-label="Save board">
+        <span class="icon-button-label" aria-hidden="true">Save board</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
           <path d="M17 21v-8H7v8"></path>
@@ -109,12 +112,14 @@
         </svg>
       </button>
       <button id="openBtn" class="icon-button" type="button" title="Open board" aria-label="Open board">
+        <span class="icon-button-label" aria-hidden="true">Open board</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path>
         </svg>
       </button>
       <button id="importBtn" class="icon-button" type="button" title="Import .refboard or JSON" aria-label="Import .refboard or JSON">
+        <span class="icon-button-label" aria-hidden="true">Import board</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
           <path d="M14 2v6h6"></path>
@@ -123,6 +128,7 @@
         </svg>
       </button>
       <button id="exportBoardBtn" class="icon-button" type="button" title="Export .refboard" aria-label="Export .refboard">
+        <span class="icon-button-label" aria-hidden="true">Export board</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
           <path d="M14 2v6h6"></path>
@@ -131,6 +137,7 @@
         </svg>
       </button>
       <button id="savePngBtn" class="icon-button" type="button" title="Export PNG" aria-label="Export PNG">
+        <span class="icon-button-label" aria-hidden="true">Export PNG</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <path d="M7 10l5 5 5-5"></path>
@@ -138,6 +145,7 @@
         </svg>
       </button>
       <button id="themeBtn" class="icon-button" type="button" title="Switch theme" aria-label="Switch theme">
+        <span class="icon-button-label" aria-hidden="true">Switch theme</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3z"></path>
         </svg>
@@ -147,7 +155,7 @@
     </aside>
     <header class="board-bar" aria-label="Board">
       <button id="boardTitleBtn" class="board-title" type="button" title="Double-click to rename">Board.001</button>
-      <span id="saveState" class="save-state">unsaved</span>
+      <span id="saveState" class="save-state" role="status" aria-live="polite">unsaved</span>
     </header>
     <span id="status" role="status"></span>
     <div id="contextMenu" class="context-menu" role="menu" hidden>

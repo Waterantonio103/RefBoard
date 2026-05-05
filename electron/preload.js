@@ -7,6 +7,16 @@ contextBridge.exposeInMainWorld("referenceBoard", {
     }
     return ipcRenderer.invoke("reference-board:import-image-url", url);
   },
+  searchImages: async (request) => {
+    const payload = await ipcRenderer.invoke("reference-board:image-search", request || {});
+    if (payload?.error) {
+      const error = new Error(payload.error);
+      error.code = payload.code;
+      error.status = payload.status;
+      throw error;
+    }
+    return payload;
+  },
   onMenuAction: (callback) => {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, action) => callback(action);

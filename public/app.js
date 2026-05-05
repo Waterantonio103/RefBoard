@@ -12,6 +12,18 @@ const boardRenameEditor = document.getElementById("boardRenameEditor");
 const boardRenameInput = document.getElementById("boardRenameInput");
 const openDialog = document.getElementById("openDialog");
 const boardList = document.getElementById("boardList");
+const imageSearchDialog = document.getElementById("imageSearchDialog");
+const imageSearchForm = document.getElementById("imageSearchForm");
+const imageSearchQuery = document.getElementById("imageSearchQuery");
+const imageSearchSafe = document.getElementById("imageSearchSafe");
+const imageSearchApiKey = document.getElementById("imageSearchApiKey");
+const imageSearchEngineId = document.getElementById("imageSearchEngineId");
+const imageSearchSetup = document.getElementById("imageSearchSetup");
+const imageSearchRecent = document.getElementById("imageSearchRecent");
+const imageSearchMessage = document.getElementById("imageSearchMessage");
+const imageSearchResults = document.getElementById("imageSearchResults");
+const imageSearchPreview = document.getElementById("imageSearchPreview");
+const imageSearchMoreBtn = document.getElementById("imageSearchMoreBtn");
 const appMenus = Array.from(document.querySelectorAll(".app-menu"));
 const fileAutoSaveInput = document.getElementById("fileAutoSaveInput");
 const windowMinimizeBtn = document.getElementById("windowMinimizeBtn");
@@ -30,11 +42,20 @@ const nodes = {
   frames: new Map()
 };
 
+const ZOOM_MIN = 0.08;
+const ZOOM_MAX = 6;
+const ZOOM_STEP = 1.15;
+const UNDO_LIMIT = 80;
+const IMAGE_SEARCH_RECENT_LIMIT = 8;
+const MARQUEE_MIN_DRAG = 4;
+
 let idCounter = 0;
 let selected = null;
 let isPanning = false;
 let panLast = null;
 let activeFrameDrag = null;
+let activeMultiImageDrag = null;
+let marqueeSelection = null;
 let pendingImagePosition = null;
 let contextWorldPosition = null;
 let renameTarget = null;
@@ -44,6 +65,22 @@ let saveStateTimer = null;
 let isLoadingBoard = false;
 let isSavingBoard = false;
 let autoSaveEnabled = true;
+let isRestoringHistory = false;
+let lastHistorySnapshot = null;
+const undoStack = [];
+let imageSearchPrefsLoaded = false;
+const imageSearchState = {
+  launchPosition: null,
+  results: [],
+  selectedIndex: -1,
+  nextStart: null,
+  query: "",
+  safeSearch: "active",
+  recent: [],
+  loading: false,
+  importing: false,
+  message: ""
+};
 let currentBoard = {
   id: null,
   name: "Board.001",
@@ -67,6 +104,16 @@ const overlayLayer = new Konva.Layer();
 stage.add(contentLayer);
 stage.add(overlayLayer);
 
+const marqueeRect = new Konva.Rect({
+  visible: false,
+  listening: false,
+  fill: "rgba(117, 167, 255, 0.12)",
+  stroke: "#75a7ff",
+  strokeWidth: 1,
+  dash: [6, 4],
+  strokeScaleEnabled: false
+});
+
 const transformer = new Konva.Transformer({
   rotateEnabled: false,
   keepRatio: false,
@@ -75,6 +122,7 @@ const transformer = new Konva.Transformer({
   anchorFill: "#1f2022",
   anchorStroke: "#75a7ff"
 });
+overlayLayer.add(marqueeRect);
 overlayLayer.add(transformer);
 
 function cssVar(name) {
@@ -119,7 +167,7 @@ function imageMotionAttrs({ hovered = false, selected: isSelected = false, activ
 
 function applyImageMotion(node, overrides = {}) {
   if (!node) return;
-  const isSelected = selected?.type === "image" && selected.id === node.id();
+  const isSelected = isSelectedItem("image", node.id());
   setNodeMotion(node, imageMotionAttrs({ selected: isSelected, ...overrides }), motionDuration(0.12));
 }
 
@@ -128,7 +176,7 @@ function updateItemMotion() {
     applyImageMotion(node, { hovered: Boolean(node.getAttr("isHovered")), active: Boolean(node.getAttr("isActive")) });
   });
   nodes.frames.forEach(({ rect }, id) => {
-    const isSelected = selected?.type === "frame" && selected.id === id;
+    const isSelected = isSelectedItem("frame", id);
     rect.stroke(isSelected ? cssVar("--accent") : cssVar("--frame-stroke"));
     rect.strokeWidth(isSelected ? 2.5 : 2);
   });
@@ -137,12 +185,13 @@ function updateItemMotion() {
 
 function applyCanvasTheme() {
   const accent = cssVar("--accent");
+  marqueeRect.stroke(accent);
   transformer.borderStroke(accent);
   transformer.anchorFill(cssVar("--bg"));
   transformer.anchorStroke(accent);
   nodes.frames.forEach(({ rect, label }) => {
     rect.fill(cssVar("--frame-fill"));
-    rect.stroke(selected?.type === "frame" && selected.id === rect.getParent()?.id() ? accent : cssVar("--frame-stroke"));
+    rect.stroke(isSelectedItem("frame", rect.getParent()?.id()) ? accent : cssVar("--frame-stroke"));
     label.fill(cssVar("--frame-title"));
   });
   updateItemMotion();
@@ -215,6 +264,7 @@ function scheduleAutoSave() {
 
 function markDirty(message) {
   if (isLoadingBoard) return;
+  commitHistorySnapshot();
   currentBoard.dirty = true;
   setSaveState("unsaved");
   scheduleAutoSave();
@@ -302,6 +352,222 @@ function worldToScreen(x, y) {
   };
 }
 
+function captureBoardSnapshot() {
+  return {
+    viewport: {
+      x: Math.round(stage.x()),
+      y: Math.round(stage.y()),
+      scale: Number(stage.scaleX().toFixed(4))
+    },
+    frames: state.frames.map((frame) => ({ ...frame })),
+    images: state.images.map((image) => ({ ...image }))
+  };
+}
+
+function snapshotKey(snapshot) {
+  return JSON.stringify(snapshot);
+}
+
+function resetUndoHistory() {
+  undoStack.length = 0;
+  lastHistorySnapshot = captureBoardSnapshot();
+}
+
+function commitHistorySnapshot() {
+  if (isLoadingBoard || isRestoringHistory) return;
+  const nextSnapshot = captureBoardSnapshot();
+  const previousSnapshot = lastHistorySnapshot || nextSnapshot;
+  if (snapshotKey(previousSnapshot) === snapshotKey(nextSnapshot)) return;
+  undoStack.push(previousSnapshot);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  lastHistorySnapshot = nextSnapshot;
+}
+
+async function restoreBoardSnapshot(snapshot) {
+  clearBoard();
+  state.viewport = snapshot.viewport || { x: 0, y: 0, scale: 1 };
+  stage.position({ x: state.viewport.x || 0, y: state.viewport.y || 0 });
+  stage.scale({ x: state.viewport.scale || 1, y: state.viewport.scale || 1 });
+  state.frames = Array.isArray(snapshot.frames) ? snapshot.frames.map((frame) => ({ ...frame })) : [];
+  state.images = Array.isArray(snapshot.images) ? snapshot.images.map((image) => ({ ...image })) : [];
+  idCounter = state.frames.length + state.images.length;
+  state.frames.forEach(createFrameNode);
+  for (const image of state.images) {
+    try {
+      const element = await loadImageElement(image.src);
+      createImageNode(image, element);
+    } catch (_error) {
+      image.missing = true;
+    }
+  }
+  contentLayer.batchDraw();
+  overlayLayer.batchDraw();
+}
+
+async function undoBoardAction() {
+  if (!undoStack.length) {
+    setStatus("Nothing to undo");
+    return;
+  }
+  hideContextMenu();
+  hideRenameEditor({ commit: true });
+  await hideBoardRenameEditor({ commit: true });
+  const snapshot = undoStack.pop();
+  isRestoringHistory = true;
+  try {
+    await restoreBoardSnapshot(snapshot);
+  } finally {
+    isRestoringHistory = false;
+  }
+  lastHistorySnapshot = captureBoardSnapshot();
+  currentBoard.dirty = true;
+  setSaveState("unsaved");
+  scheduleAutoSave();
+  setStatus("Undone");
+}
+
+function isSelectedItem(type, id) {
+  if (!selected) return false;
+  if (selected.type === type && selected.id === id) return true;
+  return selected.type === "multi" && selected.items.some((item) => item.type === type && item.id === id);
+}
+
+function selectionItemKey(item) {
+  return `${item.type}:${item.id}`;
+}
+
+function selectedItems() {
+  if (!selected) return [];
+  if (selected.type === "multi") return [...selected.items];
+  return [{ type: selected.type, id: selected.id }];
+}
+
+function hasSingleSelection() {
+  return Boolean(selected && selected.type !== "multi");
+}
+
+function nodeForSelectionItem(item) {
+  if (item.type === "image") return nodes.images.get(item.id) || null;
+  if (item.type === "frame") return nodes.frames.get(item.id)?.rect || null;
+  return null;
+}
+
+function normalizeSelectionItems(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (!item?.type || !item?.id) return false;
+    if (item.type === "image" && !nodes.images.has(item.id)) return false;
+    if (item.type === "frame" && !nodes.frames.has(item.id)) return false;
+    const key = selectionItemKey(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function setSelectionItems(items, options = {}) {
+  const nextItems = normalizeSelectionItems(items);
+  if (!nextItems.length) {
+    selected = null;
+    transformer.nodes([]);
+  } else if (nextItems.length === 1) {
+    selected = { ...nextItems[0] };
+    transformer.nodes(nextItems.map(nodeForSelectionItem).filter(Boolean));
+  } else {
+    selected = { type: "multi", items: nextItems };
+    transformer.nodes(nextItems.map(nodeForSelectionItem).filter(Boolean));
+  }
+  updateItemMotion();
+  overlayLayer.batchDraw();
+
+  if (options.status && nextItems.length) {
+    setStatus(`${nextItems.length} board item${nextItems.length === 1 ? "" : "s"} selected`);
+  }
+}
+
+function selectNode(type, id) {
+  if (!type || !id) {
+    setSelectionItems([]);
+    return;
+  }
+  setSelectionItems([{ type, id }]);
+}
+
+function selectItem(type, id, options = {}) {
+  const item = { type, id };
+  if (!options.additive) {
+    if (isSelectedItem(type, id) && selected?.type === "multi") {
+      setSelectionItems(selectedItems());
+      return;
+    }
+    setSelectionItems([item]);
+    return;
+  }
+
+  const currentItems = selectedItems();
+  const key = selectionItemKey(item);
+  const exists = currentItems.some((selectedItem) => selectionItemKey(selectedItem) === key);
+  if (!exists) {
+    setSelectionItems([...currentItems, item], { status: true });
+    return;
+  }
+
+  if (currentItems.length > 1) {
+    setSelectionItems(currentItems.filter((selectedItem) => selectionItemKey(selectedItem) !== key), { status: true });
+  }
+}
+
+function selectAllBoardElements() {
+  const items = [
+    ...state.frames.map((frame) => ({ type: "frame", id: frame.id })),
+    ...state.images.map((image) => ({ type: "image", id: image.id }))
+  ];
+  if (!items.length) {
+    selectNode(null, null);
+    setStatus("Nothing to select");
+    return;
+  }
+  setSelectionItems(items, { status: true });
+}
+
+function stagePointerOrCenter() {
+  const pointer = stage.getPointerPosition();
+  if (pointer) return pointer;
+  return {
+    x: stage.width() / 2,
+    y: stage.height() / 2
+  };
+}
+
+function setBoardZoom(newScale, anchor = stagePointerOrCenter()) {
+  const oldScale = stage.scaleX();
+  const nextScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, newScale));
+  if (Math.abs(nextScale - oldScale) < 0.0001) return;
+  const anchorWorldPoint = {
+    x: (anchor.x - stage.x()) / oldScale,
+    y: (anchor.y - stage.y()) / oldScale
+  };
+  stage.scale({ x: nextScale, y: nextScale });
+  stage.position({
+    x: anchor.x - anchorWorldPoint.x * nextScale,
+    y: anchor.y - anchorWorldPoint.y * nextScale
+  });
+  markDirty();
+}
+
+function zoomBoardBy(direction, anchor) {
+  const oldScale = stage.scaleX();
+  setBoardZoom(direction > 0 ? oldScale * ZOOM_STEP : oldScale / ZOOM_STEP, anchor);
+}
+
+function resetBoardZoom() {
+  setBoardZoom(1, { x: stage.width() / 2, y: stage.height() / 2 });
+}
+
+function isEditableTarget(target) {
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true']"));
+}
+
 function showRenameEditor(type, id, screenPosition) {
   const item = type === "frame" ? findFrame(id) : findImage(id);
   if (!item) return;
@@ -371,20 +637,6 @@ function attachByPosition(image) {
   image.frameId = frame ? frame.id : null;
 }
 
-function selectNode(type, id) {
-  selected = { type, id };
-  if (type === "image") {
-    transformer.nodes([nodes.images.get(id)]);
-  } else if (type === "frame") {
-    transformer.nodes([nodes.frames.get(id).rect]);
-  } else {
-    selected = null;
-    transformer.nodes([]);
-  }
-  updateItemMotion();
-  overlayLayer.batchDraw();
-}
-
 function imageSizeFromNatural(imageElement) {
   const maxSide = 420;
   const naturalWidth = imageElement.naturalWidth || 320;
@@ -434,13 +686,13 @@ async function importRemoteUrl(url) {
   }
 }
 
-async function addImage(src, position) {
+async function addImage(src, position, options = {}) {
   try {
     const imageElement = await loadImageElement(src);
     const size = imageSizeFromNatural(imageElement);
     const image = {
       id: makeId("image"),
-      name: "Image",
+      name: options.name || "Image",
       src,
       blobId: makeId("blob"),
       mime: mimeFromDataUrl(src),
@@ -450,13 +702,16 @@ async function addImage(src, position) {
       height: size.height,
       frameId: null
     };
+    if (options.source) image.source = { ...options.source };
     attachByPosition(image);
     state.images.push(image);
     createImageNode(image, imageElement);
     selectNode("image", image.id);
     markDirty("Image added");
+    return image;
   } catch (error) {
     setStatus(error.message);
+    return null;
   }
 }
 
@@ -489,17 +744,49 @@ function createImageNode(image, imageElement) {
 
   node.on("mousedown touchstart", (event) => {
     event.cancelBubble = true;
-    selectNode("image", image.id);
+    selectItem("image", image.id, { additive: event.evt.shiftKey });
   });
 
   node.on("dragstart", () => {
     stage.container().style.cursor = "grabbing";
     node.setAttr("isActive", true);
-    node.moveToTop();
+    const selectedImageItems = selectedItems().filter((item) => item.type === "image");
+    activeMultiImageDrag = isSelectedItem("image", image.id) && selectedImageItems.length > 1
+      ? {
+          id: image.id,
+          startX: node.x(),
+          startY: node.y(),
+          images: selectedImageItems
+            .map((item) => {
+              const selectedImage = findImage(item.id);
+              return selectedImage ? { id: selectedImage.id, x: selectedImage.x, y: selectedImage.y } : null;
+            })
+            .filter(Boolean)
+        }
+      : null;
+    if (activeMultiImageDrag) {
+      activeMultiImageDrag.images.forEach((item) => nodes.images.get(item.id)?.moveToTop());
+    } else {
+      node.moveToTop();
+    }
     applyImageMotion(node, { active: true });
   });
 
   node.on("dragmove", () => {
+    if (activeMultiImageDrag) {
+      const dx = node.x() - activeMultiImageDrag.startX;
+      const dy = node.y() - activeMultiImageDrag.startY;
+      activeMultiImageDrag.images.forEach((item) => {
+        const selectedImage = findImage(item.id);
+        const selectedNode = nodes.images.get(item.id);
+        if (!selectedImage || !selectedNode) return;
+        selectedImage.x = Math.round(item.x + dx);
+        selectedImage.y = Math.round(item.y + dy);
+        selectedNode.position({ x: selectedImage.x, y: selectedImage.y });
+      });
+      contentLayer.batchDraw();
+      return;
+    }
     image.x = Math.round(node.x());
     image.y = Math.round(node.y());
   });
@@ -507,9 +794,17 @@ function createImageNode(image, imageElement) {
   node.on("dragend", () => {
     node.setAttr("isActive", false);
     stage.container().style.cursor = node.getAttr("isHovered") ? "grab" : "default";
-    image.x = Math.round(node.x());
-    image.y = Math.round(node.y());
-    attachByPosition(image);
+    if (activeMultiImageDrag) {
+      activeMultiImageDrag.images.forEach((item) => {
+        const selectedImage = findImage(item.id);
+        if (selectedImage) attachByPosition(selectedImage);
+      });
+      activeMultiImageDrag = null;
+    } else {
+      image.x = Math.round(node.x());
+      image.y = Math.round(node.y());
+      attachByPosition(image);
+    }
     applyImageMotion(node, { hovered: Boolean(node.getAttr("isHovered")) });
     markDirty();
   });
@@ -574,7 +869,7 @@ function createFrameNode(frame) {
 
   group.on("mousedown touchstart", (event) => {
     event.cancelBubble = true;
-    selectNode("frame", frame.id);
+    selectItem("frame", frame.id, { additive: event.evt.shiftKey });
   });
 
   label.on("dblclick dbltap", (event) => {
@@ -641,19 +936,97 @@ function nextFrameName() {
   return `Frame ${state.frames.length + 1}`;
 }
 
+function selectedImageItems() {
+  return selectedItems().filter((item) => item.type === "image" && findImage(item.id));
+}
+
+function imageBounds(images) {
+  if (!images.length) return null;
+  const left = Math.min(...images.map((image) => image.x));
+  const top = Math.min(...images.map((image) => image.y));
+  const right = Math.max(...images.map((image) => image.x + image.width));
+  const bottom = Math.max(...images.map((image) => image.y + image.height));
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top
+  };
+}
+
+function normalizedRectFromPoints(start, end) {
+  return {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y)
+  };
+}
+
+function rectsIntersect(a, b) {
+  return (
+    a.x <= b.x + b.width &&
+    a.x + a.width >= b.x &&
+    a.y <= b.y + b.height &&
+    a.y + a.height >= b.y
+  );
+}
+
+function updateMarqueeRect(end) {
+  if (!marqueeSelection) return;
+  marqueeSelection.end = end;
+  const rect = normalizedRectFromPoints(marqueeSelection.start, end);
+  marqueeRect.setAttrs(rect);
+  overlayLayer.batchDraw();
+}
+
+function finishMarqueeSelection(event) {
+  if (!marqueeSelection) return;
+  const selection = marqueeSelection;
+  marqueeSelection = null;
+  marqueeRect.visible(false);
+
+  if (!selection.moved) {
+    if (!selection.additive) selectNode(null, null);
+    overlayLayer.batchDraw();
+    return;
+  }
+
+  const rect = normalizedRectFromPoints(selection.start, selection.end);
+  const imageItems = state.images
+    .filter((image) => rectsIntersect(rect, image))
+    .map((image) => ({ type: "image", id: image.id }));
+
+  if (selection.additive) {
+    setSelectionItems([...selectedItems(), ...imageItems], { status: Boolean(imageItems.length) });
+  } else {
+    setSelectionItems(imageItems, { status: Boolean(imageItems.length) });
+  }
+  if (!imageItems.length) setStatus("No images selected");
+  event?.preventDefault();
+}
+
 function createFrame(position = viewportCenter()) {
+  const selectedImages = selected?.type === "multi"
+    ? selectedImageItems().map((item) => findImage(item.id)).filter(Boolean)
+    : [];
+  const bounds = selectedImages.length > 1 ? imageBounds(selectedImages) : null;
+  const padding = 48;
   const frame = {
     id: makeId("frame"),
     name: nextFrameName(),
-    x: Math.round(position.x - 450),
-    y: Math.round(position.y - 450),
-    width: 900,
-    height: 900
+    x: bounds ? Math.round(bounds.x - padding) : Math.round(position.x - 450),
+    y: bounds ? Math.round(bounds.y - padding) : Math.round(position.y - 450),
+    width: bounds ? Math.max(160, Math.round(bounds.width + padding * 2)) : 900,
+    height: bounds ? Math.max(160, Math.round(bounds.height + padding * 2)) : 900
   };
   state.frames.push(frame);
+  selectedImages.forEach((image) => {
+    image.frameId = frame.id;
+  });
   createFrameNode(frame);
   selectNode("frame", frame.id);
-  markDirty("Frame created");
+  markDirty(bounds ? "Frame created around selection" : "Frame created");
 }
 
 function renameFrame(id) {
@@ -680,6 +1053,8 @@ function clearBoard() {
   nodes.images.clear();
   nodes.frames.clear();
   contentLayer.destroyChildren();
+  marqueeSelection = null;
+  marqueeRect.visible(false);
   transformer.nodes([]);
   selected = null;
   contentLayer.batchDraw();
@@ -712,6 +1087,7 @@ async function loadBoard(board) {
     }
   }
   isLoadingBoard = false;
+  resetUndoHistory();
   setStatus("Board loaded");
 }
 
@@ -1245,23 +1621,324 @@ async function addUrl(url, position) {
   }
 }
 
-function deleteSelection() {
-  if (!selected) return;
-  if (selected.type === "image") {
-    const index = state.images.findIndex((image) => image.id === selected.id);
-    if (index >= 0) state.images.splice(index, 1);
-    nodes.images.get(selected.id)?.destroy();
-    nodes.images.delete(selected.id);
+async function importRemoteUrlStrict(url) {
+  if (window.referenceBoard?.importImageFromUrl) {
+    const payload = await window.referenceBoard.importImageFromUrl(url);
+    if (payload?.dataUrl) return payload.dataUrl;
+    throw new Error("Image import did not return image data.");
   }
-  if (selected.type === "frame") {
-    const index = state.frames.findIndex((frame) => frame.id === selected.id);
-    if (index >= 0) state.frames.splice(index, 1);
-    state.images.forEach((image) => {
-      if (image.frameId === selected.id) image.frameId = null;
+
+  const response = await fetch("/api/import-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Remote import failed.");
+  if (!payload.url) throw new Error("Image import did not return a local URL.");
+  return payload.url;
+}
+
+async function importSearchResult(result) {
+  const position = imageSearchState.launchPosition || viewportCenter();
+  const importedUrl = await importRemoteUrlStrict(result.imageUrl);
+  let dataUrl = importedUrl;
+  if (!/^data:image\//i.test(importedUrl)) {
+    const response = await fetch(importedUrl);
+    if (!response.ok) throw new Error("Imported image could not be read.");
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) throw new Error("The imported URL did not return an image.");
+    dataUrl = await blobToDataUrl(blob);
+  }
+
+  const image = await addImage(await persistDataUrl(dataUrl), position, {
+    name: result.title || "Image",
+    source: {
+      title: result.title || "",
+      sourcePageUrl: result.sourcePageUrl || "",
+      sourceDomain: result.sourceDomain || "",
+      originalImageUrl: result.imageUrl || ""
+    }
+  });
+  if (!image) throw new Error("Imported image could not be added to the board.");
+  return image;
+}
+
+function imageSearchCredentials() {
+  return {
+    apiKey: imageSearchApiKey.value.trim(),
+    searchEngineId: imageSearchEngineId.value.trim()
+  };
+}
+
+async function loadImageSearchPrefs() {
+  if (imageSearchPrefsLoaded) return;
+  imageSearchPrefsLoaded = true;
+  const credentials = await storage.getPref("imageSearchCredentials", { apiKey: "", searchEngineId: "" });
+  const recent = await storage.getPref("imageSearchRecent", []);
+  const safeSearch = await storage.getPref("imageSearchSafe", "active");
+  imageSearchApiKey.value = credentials?.apiKey || "";
+  imageSearchEngineId.value = credentials?.searchEngineId || "";
+  imageSearchState.recent = Array.isArray(recent) ? recent.filter(Boolean).slice(0, IMAGE_SEARCH_RECENT_LIMIT) : [];
+  imageSearchState.safeSearch = safeSearch === "off" ? "off" : "active";
+  imageSearchSafe.value = imageSearchState.safeSearch;
+}
+
+async function saveImageSearchPrefs() {
+  await storage.setPref("imageSearchCredentials", imageSearchCredentials());
+  await storage.setPref("imageSearchSafe", imageSearchSafe.value === "off" ? "off" : "active");
+  await storage.setPref("imageSearchRecent", imageSearchState.recent.slice(0, IMAGE_SEARCH_RECENT_LIMIT));
+}
+
+async function rememberImageSearch(query) {
+  const normalized = query.trim();
+  if (!normalized) return;
+  imageSearchState.recent = [
+    normalized,
+    ...imageSearchState.recent.filter((item) => item.toLowerCase() !== normalized.toLowerCase())
+  ].slice(0, IMAGE_SEARCH_RECENT_LIMIT);
+  await storage.setPref("imageSearchRecent", imageSearchState.recent);
+}
+
+function setImageSearchMessage(message, tone = "") {
+  imageSearchState.message = message || "";
+  imageSearchMessage.textContent = imageSearchState.message;
+  imageSearchMessage.dataset.tone = tone;
+}
+
+function selectedImageSearchResult() {
+  return imageSearchState.results[imageSearchState.selectedIndex] || null;
+}
+
+function renderImageSearchRecent() {
+  imageSearchRecent.replaceChildren();
+  if (!imageSearchState.recent.length) return;
+  imageSearchState.recent.forEach((query) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = query;
+    button.addEventListener("click", () => {
+      imageSearchQuery.value = query;
+      searchImages({ append: false });
     });
-    nodes.frames.get(selected.id)?.group.destroy();
-    nodes.frames.delete(selected.id);
+    imageSearchRecent.append(button);
+  });
+}
+
+function renderImageSearchResults() {
+  imageSearchResults.replaceChildren();
+  if (imageSearchState.loading && !imageSearchState.results.length) {
+    const empty = document.createElement("div");
+    empty.className = "image-search-empty";
+    empty.textContent = "Searching...";
+    imageSearchResults.append(empty);
+    return;
   }
+  if (!imageSearchState.results.length) {
+    const empty = document.createElement("div");
+    empty.className = "image-search-empty";
+    empty.textContent = "Search results will appear here.";
+    imageSearchResults.append(empty);
+    return;
+  }
+
+  imageSearchState.results.forEach((result, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "image-search-result";
+    button.setAttribute("aria-pressed", String(index === imageSearchState.selectedIndex));
+
+    const thumb = document.createElement("img");
+    thumb.alt = "";
+    thumb.loading = "lazy";
+    thumb.referrerPolicy = "no-referrer";
+    thumb.src = result.thumbnailUrl || result.imageUrl;
+
+    const meta = document.createElement("span");
+    meta.className = "image-search-result-meta";
+    const title = document.createElement("span");
+    title.className = "image-search-result-title";
+    title.textContent = result.title || "Untitled image";
+    const domain = document.createElement("span");
+    domain.className = "image-search-result-domain";
+    domain.textContent = result.sourceDomain || "Source";
+    meta.append(title, domain);
+
+    button.append(thumb, meta);
+    button.addEventListener("click", () => {
+      imageSearchState.selectedIndex = index;
+      renderImageSearchResults();
+      renderImageSearchPreview();
+    });
+    imageSearchResults.append(button);
+  });
+}
+
+function renderImageSearchPreview() {
+  imageSearchPreview.replaceChildren();
+  const result = selectedImageSearchResult();
+  if (!result) {
+    const empty = document.createElement("div");
+    empty.className = "image-search-preview-empty";
+    empty.textContent = "Select a result to preview it.";
+    imageSearchPreview.append(empty);
+    return;
+  }
+
+  const img = document.createElement("img");
+  img.alt = "";
+  img.referrerPolicy = "no-referrer";
+  img.src = result.thumbnailUrl || result.imageUrl;
+
+  const title = document.createElement("h3");
+  title.textContent = result.title || "Untitled image";
+
+  const domain = document.createElement("div");
+  domain.className = "image-search-source-domain";
+  domain.textContent = result.sourceDomain || "Source";
+
+  const sourceLink = document.createElement("a");
+  sourceLink.href = result.sourcePageUrl || result.imageUrl;
+  sourceLink.target = "_blank";
+  sourceLink.rel = "noreferrer";
+  sourceLink.textContent = "Open source";
+
+  const importButton = document.createElement("button");
+  importButton.type = "button";
+  importButton.className = "text-button";
+  importButton.textContent = imageSearchState.importing ? "Importing..." : "Import";
+  importButton.disabled = imageSearchState.importing || imageSearchState.loading;
+  importButton.addEventListener("click", importSelectedImageSearchResult);
+
+  imageSearchPreview.append(img, title, domain, sourceLink, importButton);
+}
+
+function renderImageSearch() {
+  imageSearchSafe.value = imageSearchState.safeSearch;
+  renderImageSearchRecent();
+  renderImageSearchResults();
+  renderImageSearchPreview();
+  imageSearchMoreBtn.hidden = !imageSearchState.nextStart || imageSearchState.loading;
+  imageSearchSubmit.disabled = imageSearchState.loading;
+  imageSearchMoreBtn.disabled = imageSearchState.loading;
+}
+
+async function requestImageSearch(payload) {
+  if (window.referenceBoard?.searchImages) {
+    return window.referenceBoard.searchImages(payload);
+  }
+
+  const response = await fetch("/api/image-search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || "Image search failed.");
+    error.code = data.code;
+    throw error;
+  }
+  return data;
+}
+
+async function searchImages({ append = false } = {}) {
+  const query = imageSearchQuery.value.trim();
+  if (!query) {
+    setImageSearchMessage("Search text is required.", "error");
+    imageSearchQuery.focus();
+    return;
+  }
+
+  imageSearchState.loading = true;
+  imageSearchState.query = query;
+  imageSearchState.safeSearch = imageSearchSafe.value === "off" ? "off" : "active";
+  if (!append) {
+    imageSearchState.results = [];
+    imageSearchState.selectedIndex = -1;
+    imageSearchState.nextStart = null;
+  }
+  setImageSearchMessage("Searching...");
+  renderImageSearch();
+
+  try {
+    await saveImageSearchPrefs();
+    const payload = await requestImageSearch({
+      query,
+      safeSearch: imageSearchState.safeSearch,
+      start: append ? imageSearchState.nextStart || 1 : 1,
+      credentials: imageSearchCredentials()
+    });
+    imageSearchState.results = append ? [...imageSearchState.results, ...payload.results] : payload.results;
+    imageSearchState.selectedIndex = imageSearchState.selectedIndex >= 0 ? imageSearchState.selectedIndex : 0;
+    imageSearchState.nextStart = payload.nextStart || null;
+    await rememberImageSearch(query);
+    setImageSearchMessage(`${imageSearchState.results.length} result${imageSearchState.results.length === 1 ? "" : "s"}`);
+  } catch (error) {
+    if (error.code === "SETUP_REQUIRED" || error.code === "INVALID_CREDENTIALS") imageSearchSetup.open = true;
+    setImageSearchMessage(error.message || "Image search failed.", "error");
+  } finally {
+    imageSearchState.loading = false;
+    renderImageSearch();
+  }
+}
+
+async function importSelectedImageSearchResult() {
+  const result = selectedImageSearchResult();
+  if (!result) return;
+
+  imageSearchState.importing = true;
+  setImageSearchMessage("Importing image...");
+  renderImageSearchPreview();
+
+  try {
+    await importSearchResult(result);
+    setImageSearchMessage("Image imported.", "success");
+    setStatus("Image imported");
+  } catch (error) {
+    setImageSearchMessage(error.message || "Image import failed.", "error");
+  } finally {
+    imageSearchState.importing = false;
+    renderImageSearchPreview();
+  }
+}
+
+async function openImageSearch(position = viewportCenter()) {
+  hideContextMenu();
+  hideFileMenu();
+  imageSearchState.launchPosition = { x: position.x, y: position.y };
+  await loadImageSearchPrefs();
+  setImageSearchMessage(imageSearchState.message);
+  renderImageSearch();
+  if (!imageSearchDialog.open) imageSearchDialog.showModal();
+  window.setTimeout(() => imageSearchQuery.focus(), 0);
+}
+
+function deleteSelection() {
+  const items = selectedItems();
+  if (!items.length) return;
+  const imageIds = new Set(items.filter((item) => item.type === "image").map((item) => item.id));
+  const frameIds = new Set(items.filter((item) => item.type === "frame").map((item) => item.id));
+
+  if (imageIds.size) {
+    state.images = state.images.filter((image) => !imageIds.has(image.id));
+    imageIds.forEach((id) => {
+      nodes.images.get(id)?.destroy();
+      nodes.images.delete(id);
+    });
+  }
+
+  if (frameIds.size) {
+    state.frames = state.frames.filter((frame) => !frameIds.has(frame.id));
+    state.images.forEach((image) => {
+      if (frameIds.has(image.frameId)) image.frameId = null;
+    });
+    frameIds.forEach((id) => {
+      nodes.frames.get(id)?.group.destroy();
+      nodes.frames.delete(id);
+    });
+  }
+
   selectNode(null, null);
   contentLayer.batchDraw();
   markDirty("Deleted");
@@ -1330,7 +2007,7 @@ function showContextMenu(clientX, clientY, position) {
   hideFileMenu();
   contextWorldPosition = position;
   const hasSelection = Boolean(selected);
-  contextMenu.querySelector('[data-action="rename"]').disabled = !hasSelection;
+  contextMenu.querySelector('[data-action="rename"]').disabled = !hasSingleSelection();
   contextMenu.querySelector('[data-action="delete"]').disabled = !hasSelection;
   contextMenu.querySelector('[data-action="paste-image"]').disabled = !navigator.clipboard?.read;
   contextMenu.querySelector('[data-action="save-png"]').disabled = !state.frames.length && !state.images.length;
@@ -1344,11 +2021,24 @@ function showContextMenu(clientX, clientY, position) {
 }
 
 function runDesktopMenuAction(action) {
+  const activeElement = document.activeElement;
+  if (isEditableTarget(activeElement) && (action === "undo" || action === "select-all")) {
+    if (action === "select-all" && typeof activeElement.select === "function") activeElement.select();
+    if (action === "undo") document.execCommand?.("undo");
+    return;
+  }
+
   const position = viewportCenter();
+  if (action === "undo") undoBoardAction();
+  if (action === "select-all") selectAllBoardElements();
+  if (action === "reset-zoom") resetBoardZoom();
+  if (action === "zoom-in") zoomBoardBy(1, { x: stage.width() / 2, y: stage.height() / 2 });
+  if (action === "zoom-out") zoomBoardBy(-1, { x: stage.width() / 2, y: stage.height() / 2 });
   if (action === "add-images") {
     pendingImagePosition = position;
     imageInput.click();
   }
+  if (action === "image-search") openImageSearch(position);
   if (action === "new-frame") createFrame(position);
   if (action === "save-board") saveBoard();
   if (action === "open-board") showOpenPicker();
@@ -1383,6 +2073,9 @@ stage.on("mousedown", (event) => {
   hideContextMenu();
   if (!renameEditor.hidden && event.evt.button !== 2) hideRenameEditor({ commit: true });
   if (event.evt.button === 1) {
+    marqueeSelection = null;
+    marqueeRect.visible(false);
+    overlayLayer.batchDraw();
     isPanning = true;
     panLast = { x: event.evt.clientX, y: event.evt.clientY };
     stageHost.classList.add("panning");
@@ -1390,39 +2083,65 @@ stage.on("mousedown", (event) => {
     return;
   }
 
-  if (event.target === stage) {
-    selectNode(null, null);
+  if (event.evt.button === 0 && event.target === stage) {
+    const start = screenToWorld(event.evt.clientX, event.evt.clientY);
+    marqueeSelection = {
+      start,
+      end: start,
+      startClientX: event.evt.clientX,
+      startClientY: event.evt.clientY,
+      additive: event.evt.shiftKey,
+      moved: false
+    };
+    marqueeRect.setAttrs({ x: start.x, y: start.y, width: 0, height: 0, visible: false });
+    overlayLayer.batchDraw();
   }
 });
 
 stage.on("contextmenu", (event) => {
   event.evt.preventDefault();
+  marqueeSelection = null;
+  marqueeRect.visible(false);
+  overlayLayer.batchDraw();
   const position = screenToWorld(event.evt.clientX, event.evt.clientY);
   if (event.target === stage) {
     selectNode(null, null);
   } else if (nodes.images.has(event.target.id())) {
-    selectNode("image", event.target.id());
+    if (!isSelectedItem("image", event.target.id())) selectNode("image", event.target.id());
   } else {
     const frameId = frameIdFromNode(event.target);
-    if (frameId) selectNode("frame", frameId);
+    if (frameId && !isSelectedItem("frame", frameId)) selectNode("frame", frameId);
   }
   showContextMenu(event.evt.clientX, event.evt.clientY, position);
 });
 
 stage.on("mousemove", (event) => {
-  if (!isPanning || !panLast) return;
-  const dx = event.evt.clientX - panLast.x;
-  const dy = event.evt.clientY - panLast.y;
-  stage.position({ x: stage.x() + dx, y: stage.y() + dy });
-  panLast = { x: event.evt.clientX, y: event.evt.clientY };
+  if (isPanning && panLast) {
+    const dx = event.evt.clientX - panLast.x;
+    const dy = event.evt.clientY - panLast.y;
+    stage.position({ x: stage.x() + dx, y: stage.y() + dy });
+    panLast = { x: event.evt.clientX, y: event.evt.clientY };
+    return;
+  }
+
+  if (marqueeSelection) {
+    const dx = event.evt.clientX - marqueeSelection.startClientX;
+    const dy = event.evt.clientY - marqueeSelection.startClientY;
+    if (!marqueeSelection.moved && Math.hypot(dx, dy) >= MARQUEE_MIN_DRAG) {
+      marqueeSelection.moved = true;
+      marqueeRect.visible(true);
+    }
+    updateMarqueeRect(screenToWorld(event.evt.clientX, event.evt.clientY));
+  }
 });
 
-window.addEventListener("mouseup", () => {
+window.addEventListener("mouseup", (event) => {
   const wasPanning = isPanning;
   isPanning = false;
   panLast = null;
   stageHost.classList.remove("panning");
   if (wasPanning) markDirty();
+  if (event.button === 0) finishMarqueeSelection(event);
 });
 
 stageHost.addEventListener("contextmenu", (event) => {
@@ -1431,22 +2150,16 @@ stageHost.addEventListener("contextmenu", (event) => {
 
 stage.on("wheel", (event) => {
   event.evt.preventDefault();
-  const oldScale = stage.scaleX();
   const pointer = stage.getPointerPosition();
-  const mousePointTo = {
-    x: (pointer.x - stage.x()) / oldScale,
-    y: (pointer.y - stage.y()) / oldScale
-  };
-  const scaleBy = 1.08;
   const direction = event.evt.deltaY > 0 ? -1 : 1;
-  const newScale = Math.min(6, Math.max(0.08, direction > 0 ? oldScale * scaleBy : oldScale / scaleBy));
-  stage.scale({ x: newScale, y: newScale });
-  stage.position({
-    x: pointer.x - mousePointTo.x * newScale,
-    y: pointer.y - mousePointTo.y * newScale
-  });
-  markDirty();
+  zoomBoardBy(direction, pointer || stagePointerOrCenter());
 });
+
+window.addEventListener("wheel", (event) => {
+  if (!event.ctrlKey && !event.metaKey) return;
+  if (stageHost.contains(event.target)) return;
+  event.preventDefault();
+}, { passive: false });
 
 window.addEventListener("resize", () => {
   resizeStage();
@@ -1496,9 +2209,42 @@ window.addEventListener("paste", async (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (!renameEditor.hidden) return;
+  if (isEditableTarget(event.target)) return;
+  if (imageSearchDialog.open || openDialog.open) return;
   hideContextMenu();
-  if (event.key === "Escape") hideFileMenu();
+  if (event.key === "Escape") {
+    hideFileMenu();
+    marqueeSelection = null;
+    marqueeRect.visible(false);
+    overlayLayer.batchDraw();
+  }
+  const isCommand = event.ctrlKey || event.metaKey;
+  const key = event.key.toLowerCase();
+  if (isCommand && key === "z" && !event.shiftKey) {
+    event.preventDefault();
+    undoBoardAction();
+    return;
+  }
+  if (isCommand && key === "a") {
+    event.preventDefault();
+    selectAllBoardElements();
+    return;
+  }
+  if (isCommand && (event.key === "+" || event.key === "=")) {
+    event.preventDefault();
+    zoomBoardBy(1, { x: stage.width() / 2, y: stage.height() / 2 });
+    return;
+  }
+  if (isCommand && (event.key === "-" || event.key === "_")) {
+    event.preventDefault();
+    zoomBoardBy(-1, { x: stage.width() / 2, y: stage.height() / 2 });
+    return;
+  }
+  if (isCommand && event.key === "0") {
+    event.preventDefault();
+    resetBoardZoom();
+    return;
+  }
   if (event.key === "Delete" || event.key === "Backspace") {
     if (selected) event.preventDefault();
     deleteSelection();
@@ -1506,6 +2252,7 @@ window.addEventListener("keydown", (event) => {
 });
 
 document.getElementById("addImageBtn").addEventListener("click", () => imageInput.click());
+document.getElementById("imageSearchBtn").addEventListener("click", () => openImageSearch(viewportCenter()));
 document.getElementById("addFrameBtn").addEventListener("click", () => createFrame());
 document.getElementById("saveBtn").addEventListener("click", saveBoard);
 document.getElementById("openBtn").addEventListener("click", showOpenPicker);
@@ -1542,7 +2289,26 @@ windowMaximizeBtn?.addEventListener("click", () => window.referenceBoard?.window
 windowCloseBtn?.addEventListener("click", () => window.referenceBoard?.windowControl?.("close"));
 themeBtn.addEventListener("click", () => {
   setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+  themeBtn.blur();
 });
+
+document.getElementById("closeImageSearchBtn").addEventListener("click", () => {
+  imageSearchDialog.close();
+});
+
+imageSearchForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  searchImages({ append: false });
+});
+
+imageSearchSafe.addEventListener("change", () => {
+  imageSearchState.safeSearch = imageSearchSafe.value === "off" ? "off" : "active";
+  storage.setPref("imageSearchSafe", imageSearchState.safeSearch);
+});
+
+imageSearchApiKey.addEventListener("change", saveImageSearchPrefs);
+imageSearchEngineId.addEventListener("change", saveImageSearchPrefs);
+imageSearchMoreBtn.addEventListener("click", () => searchImages({ append: true }));
 
 boardTitleBtn.addEventListener("dblclick", showBoardRenameEditor);
 
@@ -1598,6 +2364,7 @@ contextMenu.addEventListener("click", (event) => {
     pendingImagePosition = position;
     imageInput.click();
   }
+  if (action === "image-search") openImageSearch(position);
   if (action === "paste-image") pasteClipboardImage(position);
   if (action === "add-frame") createFrame(position);
   if (action === "rename") renameSelection();

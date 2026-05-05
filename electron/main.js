@@ -5,6 +5,7 @@ const { pathToFileURL } = require("url");
 
 const MAX_IMPORT_BYTES = 80 * 1024 * 1024;
 const APP_ORIGIN = "app://reference-board";
+const GOOGLE_SEARCH_ENDPOINT = "https://www.googleapis.com/customsearch/v1";
 const isMac = process.platform === "darwin";
 
 protocol.registerSchemesAsPrivileged([
@@ -45,6 +46,117 @@ function assertImageUrl(sourceUrl) {
   return parsed;
 }
 
+function normalizeSafeSearch(value) {
+  return value === "off" ? "off" : "active";
+}
+
+function normalizeSearchStart(value) {
+  const number = Number.parseInt(value, 10);
+  if (!Number.isFinite(number)) return 1;
+  return Math.min(91, Math.max(1, number));
+}
+
+function sourceDomain(sourcePageUrl, fallback) {
+  try {
+    return new URL(sourcePageUrl).hostname.replace(/^www\./i, "");
+  } catch (_error) {
+    return fallback || "";
+  }
+}
+
+function credentialValue(runtimeValue, fallbackValue) {
+  const runtime = String(runtimeValue || "").trim();
+  if (runtime) return { value: runtime, source: "environment" };
+  return { value: String(fallbackValue || "").trim(), source: "fallback" };
+}
+
+function imageSearchError(code, message, status = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  return error;
+}
+
+function mapGoogleError(status, payload) {
+  const message = String(payload?.error?.message || "");
+  const reasons = Array.isArray(payload?.error?.errors)
+    ? payload.error.errors.map((entry) => String(entry.reason || ""))
+    : [];
+  const lowerMessage = message.toLowerCase();
+  if (status === 403 && reasons.some((reason) => /quota|dailylimit|ratelimit/i.test(reason))) {
+    return imageSearchError("QUOTA_EXCEEDED", "Google Image Search quota exceeded.", 429);
+  }
+  if (status === 400 || status === 403 || /api key|key|cx|credential/i.test(lowerMessage)) {
+    return imageSearchError("INVALID_CREDENTIALS", "Google Image Search credentials were rejected.", 401);
+  }
+  return imageSearchError("GOOGLE_ERROR", message || "Google Image Search request failed.", status >= 500 ? 502 : status);
+}
+
+function normalizeGoogleResults(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  return items.map((item) => {
+    const sourcePageUrl = item?.image?.contextLink || item?.link || "";
+    return {
+      title: String(item?.title || "Untitled image"),
+      sourcePageUrl,
+      imageUrl: String(item?.link || ""),
+      thumbnailUrl: String(item?.image?.thumbnailLink || item?.link || ""),
+      sourceDomain: sourceDomain(sourcePageUrl, item?.displayLink),
+      width: Number(item?.image?.width) || null,
+      height: Number(item?.image?.height) || null
+    };
+  }).filter((item) => item.imageUrl);
+}
+
+async function searchGoogleImages(_event, request = {}) {
+  const query = String(request.query || "").trim();
+  if (!query) throw imageSearchError("QUERY_REQUIRED", "Search text is required.");
+
+  const apiKey = credentialValue(process.env.GOOGLE_SEARCH_API_KEY, request.credentials?.apiKey);
+  const searchEngineId = credentialValue(process.env.GOOGLE_SEARCH_ENGINE_ID, request.credentials?.searchEngineId);
+  if (!apiKey.value || !searchEngineId.value) {
+    throw imageSearchError("SETUP_REQUIRED", "Google Image Search setup is required.");
+  }
+
+  const params = new URLSearchParams({
+    key: apiKey.value,
+    cx: searchEngineId.value,
+    q: query,
+    searchType: "image",
+    safe: normalizeSafeSearch(request.safeSearch),
+    start: String(normalizeSearchStart(request.start)),
+    num: "10"
+  });
+
+  let response;
+  try {
+    response = await fetch(`${GOOGLE_SEARCH_ENDPOINT}?${params.toString()}`);
+  } catch (_error) {
+    throw imageSearchError("NETWORK_FAILURE", "Could not reach Google Image Search.", 502);
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (_error) {
+    payload = null;
+  }
+
+  if (!response.ok) throw mapGoogleError(response.status, payload);
+
+  const results = normalizeGoogleResults(payload);
+  if (!results.length) throw imageSearchError("NO_RESULTS", "No image results found.", 404);
+
+  return {
+    query,
+    safeSearch: normalizeSafeSearch(request.safeSearch),
+    start: normalizeSearchStart(request.start),
+    nextStart: payload?.queries?.nextPage?.[0]?.startIndex || null,
+    credentialSource: apiKey.source === "environment" && searchEngineId.source === "environment" ? "environment" : "fallback",
+    results
+  };
+}
+
 async function importImageFromUrl(_event, sourceUrl) {
   const parsed = assertImageUrl(sourceUrl);
   const response = await fetch(parsed);
@@ -82,6 +194,7 @@ function buildApplicationMenu() {
     label: "File",
     submenu: [
       { label: "Add Images...", accelerator: "CmdOrCtrl+O", click: () => sendMenuAction("add-images") },
+      { label: "Image Search...", click: () => sendMenuAction("image-search") },
       { label: "New Frame", accelerator: "CmdOrCtrl+N", click: () => sendMenuAction("new-frame") },
       { type: "separator" },
       { label: "Save Board", accelerator: "CmdOrCtrl+S", click: () => sendMenuAction("save-board") },
@@ -100,13 +213,13 @@ function buildApplicationMenu() {
     {
       label: "Edit",
       submenu: [
-        { role: "undo" },
+        { label: "Undo", accelerator: "CmdOrCtrl+Z", click: () => sendMenuAction("undo") },
         { role: "redo" },
         { type: "separator" },
         { role: "cut" },
         { role: "copy" },
         { role: "paste" },
-        { role: "selectAll" },
+        { label: "Select All", accelerator: "CmdOrCtrl+A", click: () => sendMenuAction("select-all") },
         { type: "separator" },
         { label: "Delete Selected", accelerator: "Delete", click: () => sendMenuAction("delete-selected") },
         { label: "Rename Selected", accelerator: "F2", click: () => sendMenuAction("rename-selected") }
@@ -115,9 +228,9 @@ function buildApplicationMenu() {
     {
       label: "View",
       submenu: [
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        { label: "Reset Zoom", accelerator: "CmdOrCtrl+0", click: () => sendMenuAction("reset-zoom") },
+        { label: "Zoom In", accelerator: "CmdOrCtrl+Plus", click: () => sendMenuAction("zoom-in") },
+        { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: () => sendMenuAction("zoom-out") },
         { type: "separator" },
         { role: "togglefullscreen" }
       ]
@@ -216,13 +329,17 @@ function runNativeAction(event, action) {
   if (!win) return;
   const contents = win.webContents;
 
+  const boardActions = new Set(["undo", "select-all", "reset-zoom", "zoom-in", "zoom-out"]);
+  if (boardActions.has(action)) {
+    contents.send("reference-board:menu-action", action);
+    return;
+  }
+
   const editActions = {
-    undo: () => contents.undo(),
     redo: () => contents.redo(),
     cut: () => contents.cut(),
     copy: () => contents.copy(),
-    paste: () => contents.paste(),
-    "select-all": () => contents.selectAll()
+    paste: () => contents.paste()
   };
 
   if (editActions[action]) {
@@ -230,9 +347,6 @@ function runNativeAction(event, action) {
     return;
   }
 
-  if (action === "reset-zoom") contents.setZoomFactor(1);
-  if (action === "zoom-in") contents.setZoomFactor(Math.min(3, contents.getZoomFactor() + 0.1));
-  if (action === "zoom-out") contents.setZoomFactor(Math.max(0.25, contents.getZoomFactor() - 0.1));
   if (action === "toggle-fullscreen") win.setFullScreen(!win.isFullScreen());
   if (action === "minimize") win.minimize();
   if (action === "maximize") {
@@ -257,6 +371,17 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("reference-board:import-image-url", importImageFromUrl);
+  ipcMain.handle("reference-board:image-search", async (event, request) => {
+    try {
+      return await searchGoogleImages(event, request);
+    } catch (error) {
+      return {
+        error: error.message || "Image search failed.",
+        code: error.code || "IMAGE_SEARCH_FAILED",
+        status: error.status || 500
+      };
+    }
+  });
   ipcMain.on("reference-board:window-control", (event, action) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;

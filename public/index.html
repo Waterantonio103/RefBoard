@@ -17,6 +17,7 @@
             <button class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
             <div class="app-menu-dropdown" role="menu" hidden>
               <button type="button" role="menuitem" data-menu-action="add-images">Add Images...</button>
+              <button type="button" role="menuitem" data-menu-action="image-search">Image Search...</button>
               <button type="button" role="menuitem" data-menu-action="new-frame">New Frame</button>
               <div class="app-menu-separator" role="separator"></div>
               <button type="button" role="menuitem" data-menu-action="save-board">Save Board</button>
@@ -35,13 +36,13 @@
           <div class="app-menu">
             <button class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">Edit</button>
             <div class="app-menu-dropdown" role="menu" hidden>
-              <button type="button" role="menuitem" data-native-action="undo">Undo</button>
+              <button type="button" role="menuitem" data-menu-action="undo">Undo</button>
               <button type="button" role="menuitem" data-native-action="redo">Redo</button>
               <div class="app-menu-separator" role="separator"></div>
               <button type="button" role="menuitem" data-native-action="cut">Cut</button>
               <button type="button" role="menuitem" data-native-action="copy">Copy</button>
               <button type="button" role="menuitem" data-native-action="paste">Paste</button>
-              <button type="button" role="menuitem" data-native-action="select-all">Select All</button>
+              <button type="button" role="menuitem" data-menu-action="select-all">Select All</button>
               <div class="app-menu-separator" role="separator"></div>
               <button type="button" role="menuitem" data-menu-action="delete-selected">Delete Selected</button>
               <button type="button" role="menuitem" data-menu-action="rename-selected">Rename Selected</button>
@@ -50,9 +51,9 @@
           <div class="app-menu">
             <button class="app-menu-button" type="button" aria-haspopup="menu" aria-expanded="false">View</button>
             <div class="app-menu-dropdown" role="menu" hidden>
-              <button type="button" role="menuitem" data-native-action="reset-zoom">Reset Zoom</button>
-              <button type="button" role="menuitem" data-native-action="zoom-in">Zoom In</button>
-              <button type="button" role="menuitem" data-native-action="zoom-out">Zoom Out</button>
+              <button type="button" role="menuitem" data-menu-action="reset-zoom">Reset Zoom</button>
+              <button type="button" role="menuitem" data-menu-action="zoom-in">Zoom In</button>
+              <button type="button" role="menuitem" data-menu-action="zoom-out">Zoom Out</button>
               <div class="app-menu-separator" role="separator"></div>
               <button type="button" role="menuitem" data-native-action="toggle-fullscreen">Toggle Full Screen</button>
             </div>
@@ -93,6 +94,15 @@
           <path d="M4 5h16v14H4z"></path>
           <path d="m4 16 5-5 4 4 2-2 5 5"></path>
           <path d="M15.5 8.5h.01"></path>
+        </svg>
+      </button>
+      <button id="imageSearchBtn" class="icon-button" type="button" title="Search images online" aria-label="Search images online">
+        <span class="icon-button-label" aria-hidden="true">Search images online</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10.5 18a7.5 7.5 0 1 1 5.3-12.8 7.5 7.5 0 0 1-5.3 12.8z"></path>
+          <path d="m16 16 5 5"></path>
+          <path d="M7.5 10.5h6"></path>
+          <path d="M10.5 7.5v6"></path>
         </svg>
       </button>
       <button id="addFrameBtn" class="icon-button" type="button" title="Create frame" aria-label="Create frame">
@@ -160,6 +170,7 @@
     <span id="status" role="status"></span>
     <div id="contextMenu" class="context-menu" role="menu" hidden>
       <button type="button" role="menuitem" data-action="add-image">Add image</button>
+      <button type="button" role="menuitem" data-action="image-search">Image search</button>
       <button type="button" role="menuitem" data-action="paste-image">Paste image</button>
       <button type="button" role="menuitem" data-action="add-frame">Add frame</button>
       <button type="button" role="menuitem" data-action="rename">Rename selected</button>
@@ -176,6 +187,44 @@
         </header>
         <div id="boardList" class="board-list"></div>
       </form>
+    </dialog>
+    <dialog id="imageSearchDialog" class="board-dialog image-search-dialog">
+      <div class="dialog-panel image-search-panel">
+        <header class="dialog-header">
+          <h2>Image Search</h2>
+          <button id="closeImageSearchBtn" class="text-button" type="button">Close</button>
+        </header>
+        <form id="imageSearchForm" class="image-search-form">
+          <input id="imageSearchQuery" type="search" autocomplete="off" spellcheck="false" placeholder="Search Google Images" aria-label="Search Google Images">
+          <select id="imageSearchSafe" aria-label="SafeSearch">
+            <option value="active">SafeSearch on</option>
+            <option value="off">SafeSearch off</option>
+          </select>
+          <button id="imageSearchSubmit" class="text-button" type="submit">Search</button>
+        </form>
+        <details id="imageSearchSetup" class="image-search-setup">
+          <summary>Local Google Search setup</summary>
+          <div class="image-search-credentials">
+            <label>
+              <span>API key</span>
+              <input id="imageSearchApiKey" type="password" autocomplete="off" spellcheck="false">
+            </label>
+            <label>
+              <span>Search engine ID</span>
+              <input id="imageSearchEngineId" type="text" autocomplete="off" spellcheck="false">
+            </label>
+          </div>
+        </details>
+        <div id="imageSearchRecent" class="image-search-recent" aria-label="Recent searches"></div>
+        <div id="imageSearchMessage" class="image-search-message" role="status" aria-live="polite"></div>
+        <div class="image-search-body">
+          <div id="imageSearchResults" class="image-search-results" aria-label="Image search results"></div>
+          <aside id="imageSearchPreview" class="image-search-preview" aria-label="Selected image"></aside>
+        </div>
+        <footer class="image-search-footer">
+          <button id="imageSearchMoreBtn" class="text-button" type="button" hidden>More</button>
+        </footer>
+      </div>
     </dialog>
     <form id="boardRenameEditor" class="board-rename" hidden>
       <input id="boardRenameInput" type="text" autocomplete="off" spellcheck="false" aria-label="Rename board">
